@@ -17,7 +17,7 @@ import random
 import re
 import time
 import urllib.request
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
@@ -546,6 +546,106 @@ def market_turnover_rank(n: int = 20) -> list[dict]:
         "amount": _numf(d.get("f6")), "mcap": _numf(d.get("f20")),
         "float_cap": _numf(d.get("f21")), "industry": d.get("f100", "") or "",
     } for d in diff]
+
+
+def market_pct_distribution() -> dict:
+    """全A涨跌幅分布统计（真实赚钱效应：不只看涨跌家数，看涨跌幅分布）。
+
+    通过东财 clist 接口分页拉取全市场，统计涨跌停/大涨大跌/平均涨跌幅/中位数。
+    全市场约 5800 只，pz=200 分页拉完（约 30 页）。
+    ⚠️ 必须用 fid=f12(代码) 中性排序——用 fid=f3(涨跌幅) 会只取到涨幅最大的票，
+    造成 100% 上涨的采样偏差。
+    """
+    all_pcts: list[float] = []
+    total = 0
+    # 先取第一页拿到 total，同时收集数据；用 f12(代码) 排序避免按涨跌幅采样偏差
+    for pn in range(1, 32):  # 最多 31 页 × 200 = 6200，覆盖全 A
+        params = {
+            "pn": pn, "pz": 200, "po": 1, "np": 1, "fltt": 2, "invt": 2,
+            "fid": "f12", "fs": "m:0 t:6,m:0 t:80,m:1 t:2,m:1 t:23,m:0 t:81 s:2048",
+            "fields": "f12,f14,f3",
+        }
+        diff = None
+        for host in ("push2.eastmoney.com", "push2delay.eastmoney.com"):
+            try:
+                r = em_get(f"https://{host}/api/qt/clist/get", params=params,
+                           headers={"User-Agent": UA}, timeout=12)
+                d = (r.json().get("data") or {})
+                diff = d.get("diff") or []
+                if pn == 1:
+                    total = d.get("total", 0) or 0
+                if diff:
+                    all_pcts.extend([d2.get("f3") for d2 in diff if d2.get("f3") is not None])
+                    break
+            except Exception:
+                continue
+        if not diff:
+            break
+        # 已拉完全部
+        if total and len(all_pcts) >= total:
+            break
+    if not all_pcts:
+        return {}
+    n = len(all_pcts)
+    up = sum(1 for p in all_pcts if p > 0)
+    down = sum(1 for p in all_pcts if p < 0)
+    zt = sum(1 for p in all_pcts if p >= 9.8)
+    dt = sum(1 for p in all_pcts if p <= -9.8)
+    big_up = sum(1 for p in all_pcts if 5 <= p < 9.8)
+    big_down = sum(1 for p in all_pcts if -9.8 < p <= -5)
+    mid_up = sum(1 for p in all_pcts if 2 <= p < 5)
+    mid_down = sum(1 for p in all_pcts if -5 < p <= -2)
+    avg = sum(all_pcts) / n
+    sorted_p = sorted(all_pcts)
+    median = sorted_p[n // 2]
+    return {
+        "total": n, "up": up, "down": down, "zt": zt, "dt": dt,
+        "big_up": big_up, "big_down": big_down, "mid_up": mid_up, "mid_down": mid_down,
+        "avg_pct": round(avg, 2), "median_pct": round(median, 2),
+        "win_rate": round(up / n * 100, 1) if n else 0,
+        "lose_deep_rate": round(sum(1 for p in all_pcts if p <= -3) / n * 100, 1) if n else 0,
+    }
+
+
+_EXTREME_CACHE: dict = {}  # 当天缓存，避免重复请求
+
+
+def extreme_movers(period: str = "5d", top_n: int = 10) -> dict:
+    """近5日/10日涨跌幅极端股（用于触顶/触底检测）。
+
+    period: "5d" → fid=f127(5日), "10d" → fid=f164(10日, 可能不准)。
+    返回 {gainers: [...], losers: [...]}，每项含 code/name/today_pct/period_pct。
+    当天缓存，避免每次调sentiment都重复请求。
+    """
+    cache_key = f"{period}_{top_n}_{datetime.now(timezone(timedelta(hours=8))).strftime('%Y%m%d')}"
+    cached = _EXTREME_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
+    fid = "f127" if period == "5d" else "f164"
+    result = {"gainers": [], "losers": []}
+    for po, key in [(1, "gainers"), (0, "losers")]:
+        params = {
+            "pn": 1, "pz": top_n, "po": po, "np": 1, "fltt": 2, "invt": 2,
+            "fid": fid, "fs": "m:0 t:6,m:0 t:80,m:1 t:2,m:1 t:23,m:0 t:81 s:2048",
+            "fields": "f12,f14,f3,f127,f164",
+        }
+        for host in ("push2.eastmoney.com", "push2delay.eastmoney.com"):
+            try:
+                r = em_get(f"https://{host}/api/qt/clist/get", params=params,
+                           headers={"User-Agent": UA}, timeout=5)
+                diff = (r.json().get("data") or {}).get("diff") or []
+                if diff:
+                    result[key] = [{
+                        "code": str(d.get("f12", "")), "name": d.get("f14", ""),
+                        "today_pct": round(d.get("f3") or 0, 2),
+                        "period_pct": round(d.get("f127") or 0, 2) if period == "5d" else round(d.get("f164") or 0, 2),
+                    } for d in diff]
+                    break
+            except Exception:
+                continue
+    _EXTREME_CACHE[cache_key] = result
+    return result
 
 
 def eastmoney_datacenter(report_name: str, columns: str = "ALL", filter_str: str = "",

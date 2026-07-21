@@ -12,10 +12,12 @@ from datetime import datetime, timezone, timedelta
 
 import astock
 import gstock
+import requests
 
 BEIJING = timezone(timedelta(hours=8))
 _CACHE: dict = {}
 _TTL = 300  # 5 分钟；全站共享，省数据源压力
+_REASON_CACHE: dict = {}  # 涨停原因缓存：{code: (date, reason)}，每日只抓一次
 
 
 def _cached(key: str, fn, valid=bool):
@@ -100,11 +102,75 @@ def get_overview() -> dict:
     return _cached("overview", build, valid=lambda v: bool(v.get("sentiment") or v.get("sectors")))
 
 
-def _emotion() -> dict:
-    """短线情绪（聚合口径，**零个股名**）：连板梯队 / 最高连板 / 炸板率 / 封板率 / 晋级率 / 涨跌停家数。
+def _fetch_zt_reason(code: str, date_str: str) -> str:
+    """从同花顺涨停分析页抓取最新涨停原因（view_title）。
 
-    数据源＝东财涨停板四池（push2ex）。只把池子聚合成计数与比率，
-    **不输出任何个股 code/name**——守产品「零标的」红线（个股清单是甩名单，不做）。
+    每只股票每天只抓一次（缓存在 _REASON_CACHE），避免重复请求。
+    同花顺页面结构：首个 view_li_reason 的 view_title 即最新涨停原因摘要。
+    """
+    cache_key = code
+    cached = _REASON_CACHE.get(cache_key)
+    if cached and cached[0] == date_str:
+        return cached[1]
+    try:
+        url = f"http://zx.10jqka.com.cn/event/harden/stockhistory/code/{code}"
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        r = requests.get(url, headers=headers, timeout=5)
+        import re
+        # 提取首个 view_li_reason 的 view_title
+        m = re.search(r'view_li_reason[^>]*view_title="([^"]+)"', r.text)
+        reason = m.group(1) if m else ""
+        _REASON_CACHE[cache_key] = (date_str, reason)
+        return reason
+    except Exception:
+        _REASON_CACHE[cache_key] = (date_str, "")
+        return ""
+
+
+def _fmt_seal_time(t) -> str:
+    """封板时间 92500 -> '09:25:00'。"""
+    try:
+        t = int(t)
+    except (ValueError, TypeError):
+        return ""
+    if t <= 0:
+        return ""
+    return f"{t // 10000:02d}:{(t % 10000) // 100:02d}:{t % 100:02d}"
+
+
+def _zt_pattern(fbt, zbc) -> str:
+    """涨停形态推断（基于首次封板时间 + 炸板次数）。
+
+    一字板：集合竞价（9:25）即封住、全程未炸；
+    T字板：9:25 封住但有炸板回封；
+    秒板：开盘（9:30）后迅速封住、未炸；
+    烂板：炸板≥3 次（反复开板）；
+    换手板：其余盘中封板（充分换手后封住）。
+    """
+    try:
+        f = int(fbt)
+    except (ValueError, TypeError):
+        f = 0
+    try:
+        z = int(zbc)
+    except (ValueError, TypeError):
+        z = 0
+    if f <= 92500 and z == 0:
+        return "一字板"
+    if f <= 92500 and z > 0:
+        return "T字板"
+    if f <= 93000 and z == 0:
+        return "秒板"
+    if z >= 3:
+        return "烂板"
+    return "换手板"
+
+
+def _emotion() -> dict:
+    """短线情绪（聚合口径）：连板梯队 / 最高连板 / 炸板率 / 封板率 / 晋级率 / 涨跌停家数。
+
+    数据源＝东财涨停板四池（push2ex）。展示客观榜单（连板 + 首板），
+    含形态 / 最后封板时间 / 概念，不推荐 / 不预测 / 不评分。
     """
     # 定位最近交易日：从今天往前回溯，第一日有涨停池即取（非交易日/盘前返空则继续回溯）。
     today = datetime.now(BEIJING).date()
@@ -128,19 +194,34 @@ def _emotion() -> dict:
     tiers = Counter(min(b, 5) for b in lianban)
     ladder = [{"boards": b, "count": tiers[b], "plus": b >= 5} for b in sorted(tiers)]
 
-    # 连板股清单（2 板+，客观公开榜单数据；按连板数、成交额降序）。
-    # 产品定位调整（2026-07-05）：从「零标的」→「展示客观榜单但不推荐/不预测/不评分」。
-    lianban_stocks = sorted(
-        ({
-            "code": str(p.get("c", "")), "name": p.get("n", ""),
+    # 涨停股清单（客观公开榜单数据）。拆分首板（1 板）与连板（2 板+）。
+    # 新增字段：形态 / 首次&最后封板时间 / 炸板次数 / 封板资金 / 概念。
+    # 注：东财涨停池不含独立「涨停原因」字段，以 hybk（所属行业/概念）近似展示。
+    def _stock_item(p: dict) -> dict:
+        code = str(p.get("c", ""))
+        return {
+            "code": code, "name": p.get("n", ""),
             "boards": _num(p.get("lbc")) or 1,
             "price": round((astock._numf(p.get("p")) or 0) / 1000, 2),
             "pct": round(astock._numf(p.get("zdp")) or 0, 2),
-            "amount": astock._numf(p.get("amount")),      # 成交额,元（'-' 占位归一为 None，防排序对 str 取负崩溃）
+            "amount": astock._numf(p.get("amount")),      # 成交额,元
             "float_cap": astock._numf(p.get("ltsz")),     # 流通市值,元
-            "industry": p.get("hybk", ""),  # 概念/行业
-        } for p in zt if (_num(p.get("lbc")) or 1) >= 2),
-        key=lambda x: (-x["boards"], -(x["amount"] or 0)),
+            "industry": p.get("hybk", ""),                 # 所属行业/概念
+            "first_seal_time": _fmt_seal_time(p.get("fbt")),   # 首次封板时间
+            "last_seal_time": _fmt_seal_time(p.get("lbt")),    # 最后封板时间
+            "pattern": _zt_pattern(p.get("fbt"), p.get("zbc")),# 涨停形态
+            "break_count": _num(p.get("zbc")),                 # 炸板次数
+            "seal_fund": astock._numf(p.get("fund")),          # 封板资金,元
+            "reason": _fetch_zt_reason(code, resolved),        # 涨停原因（同花顺）
+        }
+
+    lianban_stocks = sorted(
+        (_stock_item(p) for p in zt if (_num(p.get("lbc")) or 1) >= 2),
+        key=lambda x: (-x["boards"], x["last_seal_time"] or "99:99:99"),
+    )
+    shouban_stocks = sorted(
+        (_stock_item(p) for p in zt if (_num(p.get("lbc")) or 1) == 1),
+        key=lambda x: (x["industry"] or "其他", x["last_seal_time"] or "99:99:99"),
     )
 
     zt_count, zb_count, yzt_count = len(zt), len(zb), len(yzt)
@@ -150,6 +231,25 @@ def _emotion() -> dict:
     # 晋级率＝今日 2 板+（＝昨涨停今又停）÷ 昨日涨停家数
     promotion_rate = round(len(lianban) / yzt_count, 3) if yzt_count else None
 
+    # 昨涨停今日涨跌幅（游资心法：强能更强 vs 强要补跌）
+    # 昨涨停池(getYesterdayZTPool)的 zdp 字段 = 昨日涨停股今日涨跌幅(%)
+    yzt_today_pcts: list[float] = []
+    yzt_stocks: list[dict] = []   # 昨涨停今日表现明细（多空辨识度）
+    for p in yzt:
+        pct = astock._numf(p.get("zdp"))
+        pct_val = round(pct, 2) if pct is not None else 0
+        if pct is not None:
+            yzt_today_pcts.append(pct_val)
+        yzt_stocks.append({
+            "code": str(p.get("c", "")),
+            "name": p.get("n", ""),
+            "boards": _num(p.get("lbc")) or 1,
+            "today_pct": pct_val,
+            "industry": p.get("hybk", ""),
+        })
+    # 按今日涨跌幅降序：强的在前，补跌的在后
+    yzt_stocks.sort(key=lambda x: x["today_pct"], reverse=True)
+
     return {
         "date": f"{resolved[:4]}-{resolved[4:6]}-{resolved[6:]}",
         "zt_count": zt_count,
@@ -157,12 +257,16 @@ def _emotion() -> dict:
         "zb_count": zb_count,
         "max_boards": max(boards) if boards else 0,
         "lianban_count": len(lianban),
+        "shouban_count": len(shouban_stocks),
         "ladder": ladder,
         "lianban_stocks": lianban_stocks,
+        "shouban_stocks": shouban_stocks,
         "seal_rate": seal_rate,
         "break_rate": break_rate,
         "promotion_rate": promotion_rate,
         "yzt_count": yzt_count,
+        "yzt_today_pcts": yzt_today_pcts,
+        "yzt_stocks": yzt_stocks,
     }
 
 

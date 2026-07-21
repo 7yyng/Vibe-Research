@@ -1,0 +1,312 @@
+{
+  "records": [
+    {
+      "date": "2026-07-21",
+      "user_bulls": [
+        {
+          "code": "001258",
+          "name": "立新能源",
+          "dimension": "连板龙头",
+          "reason": "4板连板，最高板标的，市场情绪风向标",
+          "price": 10.01,
+          "pct": 10,
+          "amount": 1579363424,
+          "industry": "电力",
+          "pattern": "T字板",
+          "boards": 4
+        },
+        {
+          "code": "002432",
+          "name": "九安医疗",
+          "dimension": "反包1板",
+          "reason": "昨日空头，今天开盘强势上板",
+          "price": 0,
+          "pct": 0,
+          "amount": 0,
+          "industry": "",
+          "pattern": "",
+          "boards": 0
+        },
+        {
+          "code": "600664",
+          "name": "哈药股份",
+          "dimension": "反包首板",
+          "reason": "避险，低价股抱团",
+          "price": 0,
+          "pct": 0,
+          "amount": 0,
+          "industry": "",
+          "pattern": "",
+          "boards": 0
+        },
+        {
+          "code": "000938",
+          "name": "紫光股份",
+          "dimension": "二波首板（帝王图）",
+          "reason": "科技容量辨识度，近期抗跌品种",
+          "price": 0,
+          "pct": 0,
+          "amount": 0,
+          "industry": "",
+          "pattern": "",
+          "boards": 0
+        }
+      ],
+      "user_bears": [
+        {
+          "code": "603137",
+          "name": "恒尚节能",
+          "dimension": "跌停板",
+          "reason": "前期情绪抱团，高潮日反核失败",
+          "price": 0,
+          "pct": 0,
+          "amount": 0,
+          "industry": "",
+          "pattern": "",
+          "boards": 0
+        }
+      ],
+      "saved_at": "2026-07-21 20:37"
+    },
+    {
+      "date": "2026-07-20",
+      "user_bulls": [
+        {
+          "code": "300534",
+          "name": "陇神戎发",
+          "dimension": "昨日涨停·今日续强",
+          "reason": "昨日1板，今日+14.62%，强的更强",
+          "price": 0,
+          "pct": 14.62,
+          "amount": 0,
+          "industry": "中药Ⅱ",
+          "pattern": "",
+          "boards": 1
+        },
+        {
+          "code": "000889",
+          "name": "中嘉博创",
+          "dimension": "昨日涨停·今日续强",
+          "reason": "昨日1板，今日+10.14%，强的更强",
+          "price": 0,
+          "pct": 10.14,
+          "amount": 0,
+          "industry": "通信服务",
+          "pattern": "",
+          "boards": 1
+        },
+        {
+          "code": "002036",
+          "name": "联创电子",
+          "dimension": "昨日涨停·今日续强",
+          "reason": "昨日1板，今日+10.08%，强的更强",
+          "price": 0,
+          "pct": 10.08,
+          "amount": 0,
+          "industry": "光学光电",
+          "pattern": "",
+          "boards": 1
+        }
+      ],
+      "user_bears": [
+        {
+          "code": "001211",
+          "name": "双枪科技",
+          "dimension": "昨日涨停·今日补跌",
+          "reason": "昨日1板，今日-9.96%，强的要补跌",
+          "price": 0,
+          "pct": -9.96,
+          "amount": 0,
+          "industry": "家居用品",
+          "pattern": "",
+          "boards": 1
+        },
+        {
+          "code": "603610",
+          "name": "麒盛科技",
+          "dimension": "昨日涨停·今日补跌",
+          "reason": "昨日1板，今日-8.36%，强的要补跌",
+          "price": 0,
+          "pct": -8.36,
+          "amount": 0,
+          "industry": "家居用品",
+          "pattern": "",
+          "boards": 1
+        },
+        {
+          "code": "002857",
+          "name": "三晖电气",
+          "dimension": "昨日涨停·今日补跌",
+          "reason": "昨日1板，今日-8.34%，强的要补跌",
+          "price": 0,
+          "pct": -8.34,
+          "amount": 0,
+          "industry": "电网设备",
+          "pattern": "",
+          "boards": 1
+        }
+      ],
+      "saved_at": "2026-07-21 20:08"
+    }
+  ],
+  "system_history": [
+    {
+      "date": "2026-07-21",
+      "bulls": [
+        {
+          "code": "001258",
+          "name": "立新能源",
+          "dimension": "连板龙头",
+          "reason": "4板连板，最高板标的，市场情绪风向标",
+          "price": 10.01,
+          "pct": 10.0,
+          "amount": 1579363424,
+          "industry": "电力",
+          "pattern": "T字板",
+          "boards": 4
+        },
+        {
+          "code": "002879",
+          "name": "长缆科技",
+          "dimension": "首板强势",
+          "reason": "秒板，成交额0.4亿，新晋强势封板",
+          "price": 13.56,
+          "pct": 9.98,
+          "amount": 39343992,
+          "industry": "电网设备",
+          "pattern": "秒板",
+          "boards": 1
+        },
+        {
+          "code": "603986",
+          "name": "兆易创新",
+          "dimension": "放量突破",
+          "reason": "成交额330.9亿，涨幅10.00%，资金共识放量",
+          "price": 475.53,
+          "pct": 10.0,
+          "amount": 33087873791.0,
+          "industry": "半导体",
+          "pattern": "",
+          "boards": 1
+        }
+      ],
+      "bears": [
+        {
+          "code": "000048",
+          "name": "京基智农",
+          "dimension": "炸板王",
+          "reason": "炸板8次后封住，多头反复溃败，抛压极重",
+          "price": 20.22,
+          "pct": 10.01,
+          "amount": 587072384,
+          "industry": "养殖业",
+          "pattern": "烂板",
+          "boards": 1
+        },
+        {
+          "code": "920305",
+          "name": "云创退",
+          "dimension": "弱股持续弱",
+          "reason": "5日跌-35.9%，今日续跌-29.6%，弱股持续弱",
+          "price": 0,
+          "pct": -29.58,
+          "amount": 0,
+          "industry": "",
+          "pattern": "",
+          "boards": 0
+        },
+        {
+          "code": "301042",
+          "name": "安联锐视",
+          "dimension": "极端弱势",
+          "reason": "5日跌-43.4%，今日-11.5%",
+          "price": 0,
+          "pct": -11.53,
+          "amount": 0,
+          "industry": "",
+          "pattern": "",
+          "boards": 0
+        }
+      ]
+    },
+    {
+      "date": "2026-07-20",
+      "bulls": [
+        {
+          "code": "001258",
+          "name": "立新能源",
+          "dimension": "连板龙头",
+          "reason": "4板连板，最高板标的，市场情绪风向标",
+          "price": 10.01,
+          "pct": 10.0,
+          "amount": 1579363424,
+          "industry": "电力",
+          "pattern": "T字板",
+          "boards": 4
+        },
+        {
+          "code": "002879",
+          "name": "长缆科技",
+          "dimension": "首板强势",
+          "reason": "秒板，成交额0.4亿，新晋强势封板",
+          "price": 13.56,
+          "pct": 9.98,
+          "amount": 39343992,
+          "industry": "电网设备",
+          "pattern": "秒板",
+          "boards": 1
+        },
+        {
+          "code": "603986",
+          "name": "兆易创新",
+          "dimension": "放量突破",
+          "reason": "成交额330.9亿，涨幅10.00%，资金共识放量",
+          "price": 475.53,
+          "pct": 10.0,
+          "amount": 33087873791.0,
+          "industry": "半导体",
+          "pattern": "",
+          "boards": 1
+        }
+      ],
+      "bears": [
+        {
+          "code": "000048",
+          "name": "京基智农",
+          "dimension": "炸板王",
+          "reason": "炸板8次后封住，多头反复溃败，抛压极重",
+          "price": 20.22,
+          "pct": 10.01,
+          "amount": 587072384,
+          "industry": "养殖业",
+          "pattern": "烂板",
+          "boards": 1
+        },
+        {
+          "code": "920305",
+          "name": "云创退",
+          "dimension": "弱股持续弱",
+          "reason": "5日跌-35.9%，今日续跌-29.6%，弱股持续弱",
+          "price": 0,
+          "pct": -29.58,
+          "amount": 0,
+          "industry": "",
+          "pattern": "",
+          "boards": 0
+        },
+        {
+          "code": "301042",
+          "name": "安联锐视",
+          "dimension": "极端弱势",
+          "reason": "5日跌-43.4%，今日-11.5%",
+          "price": 0,
+          "pct": -11.53,
+          "amount": 0,
+          "industry": "",
+          "pattern": "",
+          "boards": 0
+        }
+      ]
+    }
+  ]
+}

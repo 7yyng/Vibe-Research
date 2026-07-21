@@ -1,0 +1,101 @@
+{
+  "records": [
+    {
+      "date": "2026-07-21",
+      "user_temperature": 70,
+      "user_notes": "",
+      "user_dim_scores": {},
+      "saved_at": "2026-07-21 20:23"
+    },
+    {
+      "date": "2026-07-20",
+      "user_temperature": 0,
+      "user_notes": "冰点",
+      "user_dim_scores": {},
+      "saved_at": "2026-07-21 01:01"
+    },
+    {
+      "date": "2026-07-17",
+      "user_temperature": 0,
+      "user_notes": "冰点",
+      "user_dim_scores": {},
+      "saved_at": "2026-07-21 01:01"
+    },
+    {
+      "date": "2026-07-16",
+      "user_temperature": 10,
+      "user_notes": "冰点",
+      "user_dim_scores": {},
+      "saved_at": "2026-07-21 01:01"
+    },
+    {
+      "date": "2026-07-15",
+      "user_temperature": 30,
+      "user_notes": "偏冷",
+      "user_dim_scores": {},
+      "saved_at": "2026-07-21 01:01"
+    },
+    {
+      "date": "2026-07-14",
+      "user_temperature": 40,
+      "user_notes": "中性",
+      "user_dim_scores": {},
+      "saved_at": "2026-07-21 01:01"
+    },
+    {
+      "date": "2026-07-13",
+      "user_temperature": 0,
+      "user_notes": "冰点",
+      "user_dim_scores": {},
+      "saved_at": "2026-07-21 01:01"
+    },
+    {
+      "date": "2026-07-10",
+      "user_temperature": 20,
+      "user_notes": "偏冷",
+      "user_dim_scores": {},
+      "saved_at": "2026-07-21 12:15"
+    },
+    {
+      "date": "2026-07-09",
+      "user_temperature": 60,
+      "user_notes": "偏热",
+      "user_dim_scores": {},
+      "saved_at": "2026-07-21 12:15"
+    },
+    {
+      "date": "2026-07-08",
+      "user_temperature": 10,
+      "user_notes": "冰点",
+      "user_dim_scores": {},
+      "saved_at": "2026-07-21 12:15"
+    },
+    {
+      "date": "2026-07-07",
+      "user_temperature": 0,
+      "user_notes": "冰点",
+      "user_dim_scores": {},
+      "saved_at": "2026-07-21 12:15"
+    },
+    {
+      "date": "2026-07-06",
+      "user_temperature": 10,
+      "user_notes": "冰点",
+      "user_dim_scores": {},
+      "saved_at": "2026-07-21 12:15"
+    }
+  ],
+  "weights": {
+    "tug_of_war": 0.5,
+    "real_profit": 0.25,
+    "lianban": 0.15,
+    "extreme": 0.1
+  },
+  "system_history": [
+    {
+      "date": "2026-07-21",
+      "temperature": 58.7,
+      "state": "偏热"
+    }
+  ]
+}

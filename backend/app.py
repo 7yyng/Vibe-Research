@@ -25,6 +25,8 @@ import newsradar
 import portfolio as pf
 import market
 import myreports as mr
+import sentiment as senti
+import core_stocks as cs
 
 app = FastAPI(title="Vibe-Research API", version="0.1.3")
 
@@ -277,6 +279,77 @@ def market_turnover_top():
         return {"data": market.get_turnover_top()}
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"成交额榜异常：{e}") from e
+
+
+# ---------- 情绪温度量化系统 ----------
+
+@app.get("/api/sentiment/temperature")
+def sentiment_temperature():
+    """当日情绪温度（5 维加权打分 0-100 + 因子分解）。"""
+    try:
+        return {"data": senti.compute_temperature()}
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"情绪温度计算异常：{e}") from e
+
+
+class UserSentimentInput(BaseModel):
+    date: str
+    temperature: int
+    notes: str = ""
+    dim_scores: dict | None = None
+
+
+@app.post("/api/sentiment/user-input")
+def sentiment_user_input(body: UserSentimentInput):
+    """保存用户手动输入的情绪温度（用于逐日校准量化指标）。"""
+    try:
+        return {"data": senti.save_user_input(body.date, body.temperature, body.notes, body.dim_scores)}
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"保存用户情绪输入异常：{e}") from e
+
+
+@app.get("/api/sentiment/calibration")
+def sentiment_calibration():
+    """校准对比：系统值 vs 用户值历史序列 + 当前权重。"""
+    try:
+        return {"data": senti.get_calibration()}
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"校准数据异常：{e}") from e
+
+
+# ---------- 每日核心标的系统（多方/空方，用于对比市场情绪）----------
+
+@app.get("/api/core-stocks")
+def core_stocks_today():
+    """今日核心标的（多方+空方，系统选+用户校准覆盖）。"""
+    try:
+        return {"data": cs.get_core_stocks_with_calibration()}
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"核心标的获取异常：{e}") from e
+
+
+class UserCoreStocksInput(BaseModel):
+    date: str
+    bulls: list[dict] = []
+    bears: list[dict] = []
+
+
+@app.post("/api/core-stocks/user-input")
+def core_stocks_user_input(body: UserCoreStocksInput):
+    """保存用户校准的核心标的。"""
+    try:
+        return {"data": cs.save_user_core_stocks(body.date, body.bulls, body.bears)}
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"保存核心标异常：{e}") from e
+
+
+@app.get("/api/core-stocks/history")
+def core_stocks_history():
+    """核心标的历史记录（系统 vs 用户对比）。"""
+    try:
+        return {"data": cs.get_core_stocks_history()}
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"核心标的历史异常：{e}") from e
 
 
 @app.get("/api/global/indices")
