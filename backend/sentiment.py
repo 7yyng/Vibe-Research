@@ -1,4 +1,4 @@
-"""情绪温度量化系统 V3.1 —— 锚定昨日极端股转变 + 涨跌停拔河。
+﻿"""情绪温度量化系统 V3.1 —— 锚定昨日极端股转变 + 涨跌停拔河。
 
 核心改进（2026-07-21 V3.1 用户反馈）：
   1. 拔河维度不再只看涨跌停家数比，核心改为"昨日极端股今日转变"
@@ -197,6 +197,19 @@ def _save_history(data: dict):
         pass
 
 
+def _save_system_history(date: str, temperature: float, state: str):
+    """每次计算系统温度时自动存一条历史记录（用于校准对比）。"""
+    if not date:
+        return
+    data = _load_history()
+    sys_hist = data.setdefault("system_history", [])
+    sys_hist = [s for s in sys_hist if s.get("date") != date]
+    sys_hist.append({"date": date, "temperature": temperature, "state": state})
+    sys_hist.sort(key=lambda s: s["date"], reverse=True)
+    data["system_history"] = sys_hist[:90]
+    _save_history(data)
+
+
 def compute_temperature() -> dict:
     """计算当日情绪温度（V3：拔河50% + 赚钱效应25% + 连板15% + 极端10%）。
 
@@ -284,7 +297,7 @@ def compute_temperature() -> dict:
         else:
             tug_state = "双方胶着"
 
-    return {
+    result = {
         "date": main_date,
         "data_warning": data_warning,
         "data_dates": {"zt_date": emo_date, "sentiment_date": sent_date},
@@ -310,6 +323,11 @@ def compute_temperature() -> dict:
             "up": sent.get("up", 0), "down": sent.get("down", 0),
         },
     }
+
+    # 自动保存系统温度到历史（每次计算都存，用于校准对比）
+    _save_system_history(main_date, round(total, 1), state)
+
+    return result
 
 
 def save_user_input(date: str, temperature: int, notes: str = "",
