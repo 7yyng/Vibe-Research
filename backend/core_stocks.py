@@ -304,10 +304,7 @@ def save_user_core_stocks(date: str, bulls: list[dict], bears: list[dict]) -> di
 
 
 def _fetch_realtime_quotes(stocks: list[dict]) -> list[dict]:
-    """给标的列表补充今日实时行情（涨跌幅/现价/开盘价等）。
-
-    用于"昨日核心标的今日表现追踪"——观察昨日极端股今天的转变。
-    """
+    """给标的列表补充今日实时行情（涨跌幅/现价/开盘价等）。"""
     if not stocks:
         return stocks
     codes = [s.get("code", "") for s in stocks if s.get("code")]
@@ -336,6 +333,47 @@ def _fetch_realtime_quotes(stocks: list[dict]) -> list[dict]:
             "today_amount_wan": q.get("amount_wan", 0),
             "today_turnover": q.get("turnover_pct", 0),
             "today_amplitude": q.get("amplitude_pct", 0),
+        })
+    return out
+
+
+def _add_tracking_days(stocks: list[dict], all_records: list[dict]) -> list[dict]:
+    """给标的补充连续追踪信息：在历史中出现的天数 + 每日状态。
+
+    核心用途：德明利这类连续跌停的票，需要看多天的状态，
+    而不是只看单日形态。
+    """
+    if not stocks or not all_records:
+        return stocks
+
+    # 构建全局索引：code → [{date, side, dimension, reason, pct}]
+    code_history: dict[str, list[dict]] = {}
+    for rec in sorted(all_records, key=lambda r: r["date"]):
+        date = rec.get("date", "")
+        for s in rec.get("user_bulls", []):
+            code_history.setdefault(s["code"], []).append({
+                "date": date, "side": "bull",
+                "dimension": s.get("dimension", ""), "reason": s.get("reason", ""),
+                "pct": s.get("pct", 0),
+            })
+        for s in rec.get("user_bears", []):
+            code_history.setdefault(s["code"], []).append({
+                "date": date, "side": "bear",
+                "dimension": s.get("dimension", ""), "reason": s.get("reason", ""),
+                "pct": s.get("pct", 0),
+            })
+
+    out = []
+    for s in stocks:
+        code = s.get("code", "")
+        history = code_history.get(code, [])
+        tracking_days = len(history)
+        # 取最近5天的历史记录
+        recent = history[-5:] if history else []
+        out.append({
+            **s,
+            "tracking_days": tracking_days,
+            "tracking_history": recent,
         })
     return out
 
@@ -386,51 +424,22 @@ def get_core_stocks_with_calibration() -> dict:
     records = data.get("records", [])
 
     # ── 昨日核心标的 + 今日行情追踪 ──
-    # 优先用户手动录入；未录入时系统自动从昨日涨停股今日表现中选出
+    # 只使用用户手动录入的核心标的，系统不会自动生成
+    # 因为核心标的是基于事件（地天板/反核/核按钮/连续跌停等），无法自动判断
     yest_date = _yesterday_date(today_date) if today_date else ""
     yest_rec = next((r for r in records if r.get("date") == yest_date), None)
     if yest_rec:
         yest_bulls = _fetch_realtime_quotes(yest_rec.get("user_bulls", []))
         yest_bears = _fetch_realtime_quotes(yest_rec.get("user_bears", []))
+        # 给每只标的补充连续追踪天数
+        yest_bulls = _add_tracking_days(yest_bulls, records)
+        yest_bears = _add_tracking_days(yest_bears, records)
         yesterday = {
             "date": yest_date,
             "bulls": yest_bulls,
             "bears": yest_bears,
             "has_data": True,
-            "note": "用户校准版 · 昨日核心标的今日表现",
-        }
-    elif yzt_stocks:
-        strong = [s for s in yzt_stocks if s.get("today_pct", 0) > 0]
-        weak = sorted([s for s in yzt_stocks if s.get("today_pct", 0) <= 0],
-                      key=lambda x: x.get("today_pct", 0))
-        auto_bulls = [
-            {
-                "code": s["code"], "name": s["name"],
-                "dimension": "昨日涨停·今日续强",
-                "reason": f"昨日{s['boards']}板，今日+{s['today_pct']:.2f}%，强的更强",
-                "price": 0, "pct": s["today_pct"], "amount": 0,
-                "industry": s.get("industry", ""), "pattern": "", "boards": s["boards"],
-                "today_pct": s["today_pct"],
-            }
-            for s in strong[:3]
-        ]
-        auto_bears = [
-            {
-                "code": s["code"], "name": s["name"],
-                "dimension": "昨日涨停·今日补跌",
-                "reason": f"昨日{s['boards']}板，今日{s['today_pct']:.2f}%，强的要补跌",
-                "price": 0, "pct": s["today_pct"], "amount": 0,
-                "industry": s.get("industry", ""), "pattern": "", "boards": s["boards"],
-                "today_pct": s["today_pct"],
-            }
-            for s in weak[:3]
-        ]
-        yesterday = {
-            "date": yest_date,
-            "bulls": auto_bulls,
-            "bears": auto_bears,
-            "has_data": True,
-            "note": "系统自动生成 · 昨日涨停今日表现——盘后可手动校准增删特殊事件标的",
+            "note": "用户录入版 · 昨日核心标的今日表现",
         }
     else:
         yesterday = {
@@ -438,7 +447,7 @@ def get_core_stocks_with_calibration() -> dict:
             "bulls": [],
             "bears": [],
             "has_data": False,
-            "note": "昨日无涨停数据",
+            "note": "昨日无用户录入数据——盘后请在「今日核心标的」录入，明日即可追踪",
         }
 
     # ── 今日录入/推荐 ──
