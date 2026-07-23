@@ -318,6 +318,15 @@ def sentiment_calibration():
         raise HTTPException(502, f"校准数据异常：{e}") from e
 
 
+@app.get("/api/sentiment/temperature-history")
+def sentiment_temperature_history(days: int = 15):
+    """15交易日温度对比表：系统值 vs 用户校正值，按日期降序。"""
+    try:
+        return {"data": senti.get_temperature_history(days)}
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"温度历史异常：{e}") from e
+
+
 # ---------- 每日核心标的系统（多方/空方，用于对比市场情绪）----------
 
 @app.get("/api/core-stocks")

@@ -430,3 +430,30 @@ def get_calibration() -> dict:
         "history": comparison,
         "record_count": len(records),
     }
+
+
+def get_temperature_history(days: int = 15) -> dict:
+    """N交易日温度对比：系统值 vs 用户校正值，按日期降序。"""
+    data = _load_history()
+    sys_hist = data.get("system_history", [])
+    records = data.get("records", [])
+    sys_map = {s["date"]: s for s in sys_hist}
+    user_map = {r["date"]: r for r in records}
+    all_dates = sorted(set(list(sys_map.keys()) + list(user_map.keys())), reverse=True)[:days]
+    rows = []
+    for date in all_dates:
+        sys_s = sys_map.get(date)
+        user_r = user_map.get(date)
+        sys_t = sys_s["temperature"] if sys_s else None
+        sys_state = sys_s["state"] if sys_s else None
+        user_t = user_r.get("user_temperature") if user_r else None
+        user_notes = user_r.get("user_notes", "") if user_r else ""
+        diff = None
+        if sys_t is not None and user_t is not None:
+            diff = round(user_t - sys_t, 1)
+        rows.append({
+            "date": date, "system": sys_t, "system_state": sys_state,
+            "user": user_t, "user_notes": user_notes, "diff": diff,
+            "has_system": sys_s is not None, "has_user": user_r is not None,
+        })
+    return {"rows": rows, "total_system": len(sys_hist), "total_user": len(records)}
