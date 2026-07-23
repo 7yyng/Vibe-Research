@@ -428,6 +428,13 @@ def get_core_stocks_with_calibration() -> dict:
     # 因为核心标的是基于事件（地天板/反核/核按钮/连续跌停等），无法自动判断
     yest_date = _yesterday_date(today_date) if today_date else ""
     yest_rec = next((r for r in records if r.get("date") == yest_date), None)
+    # 如果精确的前一交易日没有数据，往前找最近有数据的交易日（最多回溯5天）
+    if not yest_rec and records:
+        for r in records:
+            if r.get("date") and r.get("date") < today_date:
+                yest_rec = r
+                yest_date = r.get("date")
+                break
     if yest_rec:
         yest_bulls = _fetch_realtime_quotes(yest_rec.get("user_bulls", []))
         yest_bears = _fetch_realtime_quotes(yest_rec.get("user_bears", []))
