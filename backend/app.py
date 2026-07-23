@@ -27,6 +27,7 @@ import market
 import myreports as mr
 import sentiment as senti
 import core_stocks as cs
+import review_plans
 
 app = FastAPI(title="Vibe-Research API", version="0.1.3")
 
@@ -672,3 +673,96 @@ def industry(top: int = Query(20, ge=5, le=50)):
         return {"data": data}
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"行业排名异常：{e}") from e
+
+
+# ── 每日复盘计划 ──
+@app.get("/api/review-plans")
+async def api_get_review_plans(limit: int = 30):
+    return {"data": review_plans.get_review_plans(limit)}
+
+@app.get("/api/review-plans/latest")
+async def api_get_latest_review_plan():
+    return {"data": review_plans.get_latest_review_plan()}
+
+@app.get("/api/review-plans/ai-context")
+async def api_get_review_plans_for_ai():
+    return {"data": review_plans.get_review_plans_for_ai()}
+
+@app.post("/api/review-plans/save")
+async def api_save_review_plan(req: Request):
+    body = await req.json()
+    date = body.get("date", "")
+    plan_text = body.get("plan_text", "")
+    tags = body.get("tags", [])
+    if not date or not plan_text:
+        return {"error": "date and plan_text are required"}, 400
+    return {"data": review_plans.save_review_plan(date, plan_text, tags)}
+
+
+# ── 让 AI 复盘 ──
+@app.post("/api/ai-review")
+async def api_ai_review(req: Request):
+    """让 AI 进行每日复盘：融合市场数据 + 情绪温度 + 用户复盘计划风格。
+
+    前端传入当日的 context 数据（大盘/情绪/持仓等），后端补充：
+    1. 用户历史复盘计划风格（review_plans_for_ai）
+    2. 情绪温度校准历史（sentiment calibration）
+    AI 据此模仿用户的复盘思路和关注维度生成复盘报告。
+    """
+    body = await req.json()
+    context = body.get("context", "")
+    messages = body.get("messages", [])
+    llm_cfg = body.get("llm", {})
+
+    if not messages and not context:
+        raise HTTPException(400, "messages 或 context 不能同时为空")
+
+    # 获取用户复盘计划风格
+    plan_ctx = review_plans.get_review_plans_for_ai()
+    style_summary = plan_ctx.get("user_style_summary", "")
+    recent_plans = plan_ctx.get("recent_plans", [])
+
+    # 获取情绪温度校准历史
+    try:
+        calib = senti.get_calibration()
+        calib_text = json.dumps(calib, ensure_ascii=False) if calib else ""
+    except Exception:
+        calib_text = ""
+
+    # 构建复盘风格提示，注入到 context 中
+    review_style_hint = ""
+    if style_summary:
+        review_style_hint += f"\n\n## 用户复盘风格摘要\n{style_summary}"
+    if recent_plans:
+        recent_texts = [f"- [{p['date']}] {p['plan_text'][:200]}" for p in recent_plans[:5]]
+        review_style_hint += "\n\n## 用户近期复盘计划（节选）\n" + "\n".join(recent_texts)
+    if calib_text:
+        review_style_hint += f"\n\n## 情绪温度校准参考\n{calib_text[:500]}"
+
+    if review_style_hint:
+        # 将风格提示追加到 context 末尾
+        context = context + review_style_hint if context else review_style_hint
+
+    # 复用 chat 流式逻辑
+    if not llm_cfg or not llm_cfg.get("model"):
+        raise HTTPException(400, "缺少模型配置，请先在「接入 AI」里选择")
+
+    is_cli = llm_cfg.get("provider", "").startswith("cli-")
+    if is_cli:
+        kind = llm_cfg["provider"][4:]
+        if not cli_runtime.detect_cli(kind):
+            raise HTTPException(400, f"未检测到「{kind}」对应的本机命令。请先安装并登录该 CLI，或改用「API 接入」。")
+    elif not llm_cfg.get("apiKey") or not llm_cfg.get("baseURL"):
+        raise HTTPException(400, "缺少 Base URL 或 API Key，请先在「接入 AI」里填写")
+
+    cfg = llm_cfg
+
+    def gen():
+        try:
+            events = (chat_layer.run_chat_cli_stream if is_cli else chat_layer.run_chat_stream)(cfg, messages, context)
+            for ev in events:
+                yield json.dumps(ev, ensure_ascii=False) + "\n"
+        except Exception as e:  # noqa: BLE001
+            yield json.dumps({"type": "error", "message": f"AI复盘失败：{e}"}, ensure_ascii=False) + "\n"
+
+    return StreamingResponse(gen(), media_type="application/x-ndjson")
