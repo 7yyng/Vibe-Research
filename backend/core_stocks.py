@@ -417,8 +417,18 @@ def get_core_stocks_with_calibration() -> dict:
     }
     """
     sys_cs = compute_core_stocks()
-    today_date = sys_cs.get("date", "")
+    data_date = sys_cs.get("date", "")  # 数据源最近交易日
     yzt_stocks = sys_cs.get("yzt_stocks", [])
+
+    # 非交易时段修正：只有过了9:00才将视角移到新交易日
+    # 凌晨0-9点，上一个交易日仍是"今日"，避免开盘前数据被推到"昨日"
+    cal_now = datetime.now(BEIJING)
+    cal_today = cal_now.strftime("%Y-%m-%d")
+    cal_hour = cal_now.hour
+    if data_date and cal_today > data_date and cal_hour >= 9:
+        today_date = cal_today
+    else:
+        today_date = data_date
 
     data = _load_history()
     records = data.get("records", [])
@@ -459,8 +469,10 @@ def get_core_stocks_with_calibration() -> dict:
 
     # ── 今日录入/推荐 ──
     today_rec = next((r for r in records if r.get("date") == today_date), None)
-    sys_bulls = sys_cs.get("bulls", [])
-    sys_bears = sys_cs.get("bears", [])
+    # 非交易时段：不使用系统推荐填充今日（避免把昨天的系统标的显示为今日）
+    is_non_trading = today_date != data_date
+    sys_bulls = [] if is_non_trading else sys_cs.get("bulls", [])
+    sys_bears = [] if is_non_trading else sys_cs.get("bears", [])
     if today_rec:
         user_bulls = today_rec.get("user_bulls", [])
         user_bears = today_rec.get("user_bears", [])

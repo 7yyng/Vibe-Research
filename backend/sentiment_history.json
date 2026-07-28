@@ -1,6 +1,20 @@
 {
   "records": [
     {
+      "date": "2026-07-28",
+      "user_temperature": 60,
+      "user_notes": "",
+      "user_dim_scores": {},
+      "saved_at": "2026-07-28 00:08"
+    },
+    {
+      "date": "2026-07-23",
+      "user_temperature": 50,
+      "user_notes": "",
+      "user_dim_scores": {},
+      "saved_at": "2026-07-23 18:30"
+    },
+    {
       "date": "2026-07-21",
       "user_temperature": 70,
       "user_notes": "",
@@ -86,16 +100,41 @@
     }
   ],
   "weights": {
-    "tug_of_war": 0.5,
-    "real_profit": 0.25,
+    "tug_of_war": 0.53,
+    "real_profit": 0.22,
     "lianban": 0.15,
     "extreme": 0.1
   },
   "system_history": [
     {
-      "date": "2026-07-21",
-      "temperature": 59.0,
+      "date": "2026-07-28",
+      "temperature": 63.8,
       "state": "偏热"
+    },
+    {
+      "date": "2026-07-27",
+      "temperature": 74.8,
+      "state": "偏热"
+    },
+    {
+      "date": "2026-07-24",
+      "temperature": 44.5,
+      "state": "中性"
+    },
+    {
+      "date": "2026-07-23",
+      "temperature": 78.9,
+      "state": "沸点"
+    },
+    {
+      "date": "2026-07-22",
+      "temperature": 67.2,
+      "state": "偏热"
+    },
+    {
+      "date": "2026-07-21",
+      "temperature": 45.0,
+      "state": "中性"
     }
   ]
 }

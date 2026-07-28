@@ -1,6 +1,138 @@
 {
   "records": [
     {
+      "date": "2026-07-28",
+      "user_bulls": [
+        {
+          "code": "603221",
+          "name": "爱丽家居",
+          "dimension": "连板龙头",
+          "reason": "5板连板，最高板标的，市场情绪风向标",
+          "price": 15.4,
+          "pct": 10,
+          "amount": 8398005,
+          "industry": "家居用品",
+          "pattern": "秒板",
+          "boards": 5
+        },
+        {
+          "code": "001258",
+          "name": "立新能源",
+          "dimension": "反包板（6+1）",
+          "reason": "龙头反包",
+          "price": 0,
+          "pct": 0,
+          "amount": 0,
+          "industry": "",
+          "pattern": "",
+          "boards": 0
+        }
+      ],
+      "user_bears": [
+        {
+          "code": "920305",
+          "name": "云创退",
+          "dimension": "弱股持续弱",
+          "reason": "5日跌-37.7%，今日续跌-29.6%，弱股持续弱",
+          "price": 0,
+          "pct": -29.57,
+          "amount": 0,
+          "industry": "",
+          "pattern": "",
+          "boards": 0
+        }
+      ],
+      "saved_at": "2026-07-28 00:08"
+    },
+    {
+      "date": "2026-07-23",
+      "user_bulls": [
+        {
+          "code": "001258",
+          "name": "立新能源",
+          "dimension": "连板龙头",
+          "reason": "6板连板，最高板标的，市场情绪风向标",
+          "price": 12.11,
+          "pct": 9.99,
+          "amount": 1270567168,
+          "industry": "电力",
+          "pattern": "烂板",
+          "boards": 6
+        },
+        {
+          "code": "002353",
+          "name": "杰瑞股份",
+          "dimension": "首板强势",
+          "reason": "一字板，成交额3.9亿，新晋强势封板",
+          "price": 135.11,
+          "pct": 10,
+          "amount": 392943664,
+          "industry": "专用设备",
+          "pattern": "一字板",
+          "boards": 1
+        }
+      ],
+      "user_bears": [
+        {
+          "code": "000938",
+          "name": "紫光股份",
+          "dimension": "昨日抗跌辨识度",
+          "reason": "昨日抗跌转补跌",
+          "price": 0,
+          "pct": 0,
+          "amount": 0,
+          "industry": "",
+          "pattern": "",
+          "boards": 0
+        },
+        {
+          "code": "002384",
+          "name": "东山精密",
+          "dimension": "昨日空方",
+          "reason": "昨日空方继续补跌",
+          "price": 0,
+          "pct": 0,
+          "amount": 0,
+          "industry": "",
+          "pattern": "",
+          "boards": 0
+        }
+      ],
+      "saved_at": "2026-07-23 22:40"
+    },
+    {
+      "date": "2026-07-22",
+      "user_bulls": [
+        {
+          "reason": "??2?,????",
+          "code": "603118",
+          "name": "????",
+          "dimension": "??"
+        },
+        {
+          "reason": "5?,????",
+          "code": "001258",
+          "name": "????",
+          "dimension": "??"
+        }
+      ],
+      "user_bears": [
+        {
+          "reason": "4+1???,????",
+          "code": "001309",
+          "name": "???",
+          "dimension": "??"
+        },
+        {
+          "reason": "???????,????",
+          "code": "002384",
+          "name": "????",
+          "dimension": "???"
+        }
+      ],
+      "saved_at": "2026-07-23 21:21"
+    },
+    {
       "date": "2026-07-21",
       "user_bulls": [
         {
@@ -150,6 +282,207 @@
     }
   ],
   "system_history": [
+    {
+      "date": "2026-07-28",
+      "bulls": [
+        {
+          "code": "603221",
+          "name": "爱丽家居",
+          "dimension": "连板龙头",
+          "reason": "5板连板，最高板标的，市场情绪风向标",
+          "price": 15.4,
+          "pct": 10.0,
+          "amount": 8398005,
+          "industry": "家居用品",
+          "pattern": "秒板",
+          "boards": 5
+        },
+        {
+          "code": "002580",
+          "name": "圣阳股份",
+          "dimension": "首板强势",
+          "reason": "秒板，成交额1.9亿，新晋强势封板",
+          "price": 16.87,
+          "pct": 9.97,
+          "amount": 189359076,
+          "industry": "电池",
+          "pattern": "秒板",
+          "boards": 1
+        }
+      ],
+      "bears": [
+        {
+          "code": "601606",
+          "name": "长城军工",
+          "dimension": "炸板王",
+          "reason": "炸板4次后封住，多头反复溃败，抛压极重",
+          "price": 35.26,
+          "pct": 10.02,
+          "amount": 2455893264,
+          "industry": "地面兵装",
+          "pattern": "烂板",
+          "boards": 3
+        },
+        {
+          "code": "920305",
+          "name": "云创退",
+          "dimension": "弱股持续弱",
+          "reason": "5日跌-37.7%，今日续跌-29.6%，弱股持续弱",
+          "price": 0,
+          "pct": -29.57,
+          "amount": 0,
+          "industry": "",
+          "pattern": "",
+          "boards": 0
+        },
+        {
+          "code": "920790",
+          "name": "联迪信息",
+          "dimension": "极端弱势",
+          "reason": "5日跌-27.3%，今日-1.6%",
+          "price": 0,
+          "pct": -1.65,
+          "amount": 0,
+          "industry": "",
+          "pattern": "",
+          "boards": 0
+        }
+      ]
+    },
+    {
+      "date": "2026-07-23",
+      "bulls": [
+        {
+          "code": "001258",
+          "name": "立新能源",
+          "dimension": "连板龙头",
+          "reason": "5板连板，最高板标的，市场情绪风向标",
+          "price": 11.01,
+          "pct": 9.99,
+          "amount": 663233552,
+          "industry": "电力",
+          "pattern": "换手板",
+          "boards": 5
+        },
+        {
+          "code": "002575",
+          "name": "群兴玩具",
+          "dimension": "首板强势",
+          "reason": "一字板，成交额0.7亿，新晋强势封板",
+          "price": 4.83,
+          "pct": 10.02,
+          "amount": 74023614,
+          "industry": "综合Ⅱ",
+          "pattern": "一字板",
+          "boards": 1
+        }
+      ],
+      "bears": [
+        {
+          "code": "301583",
+          "name": "托伦斯",
+          "dimension": "炸板王",
+          "reason": "炸板23次后封住，多头反复溃败，抛压极重",
+          "price": 158.71,
+          "pct": 20.0,
+          "amount": 2606820320,
+          "industry": "半导体",
+          "pattern": "烂板",
+          "boards": 2
+        },
+        {
+          "code": "605178",
+          "name": "时空科技",
+          "dimension": "弱股持续弱",
+          "reason": "5日跌-16.9%，今日续跌-6.6%，弱股持续弱",
+          "price": 0,
+          "pct": -6.57,
+          "amount": 0,
+          "industry": "",
+          "pattern": "",
+          "boards": 0
+        },
+        {
+          "code": "688636",
+          "name": "智明达",
+          "dimension": "极端弱势",
+          "reason": "5日跌-31.9%，今日-1.5%",
+          "price": 0,
+          "pct": -1.48,
+          "amount": 0,
+          "industry": "",
+          "pattern": "",
+          "boards": 0
+        }
+      ]
+    },
+    {
+      "date": "2026-07-22",
+      "bulls": [
+        {
+          "code": "001258",
+          "name": "立新能源",
+          "dimension": "连板龙头",
+          "reason": "6板连板，最高板标的，市场情绪风向标",
+          "price": 12.11,
+          "pct": 9.99,
+          "amount": 1270567168,
+          "industry": "电力",
+          "pattern": "烂板",
+          "boards": 6
+        },
+        {
+          "code": "002353",
+          "name": "杰瑞股份",
+          "dimension": "首板强势",
+          "reason": "一字板，成交额3.9亿，新晋强势封板",
+          "price": 135.11,
+          "pct": 10.0,
+          "amount": 392943664,
+          "industry": "专用设备",
+          "pattern": "一字板",
+          "boards": 1
+        }
+      ],
+      "bears": [
+        {
+          "code": "002197",
+          "name": "证通电子",
+          "dimension": "炸板王",
+          "reason": "炸板6次后封住，多头反复溃败，抛压极重",
+          "price": 7.67,
+          "pct": 10.04,
+          "amount": 817002272,
+          "industry": "计算机设",
+          "pattern": "烂板",
+          "boards": 3
+        },
+        {
+          "code": "605178",
+          "name": "时空科技",
+          "dimension": "弱股持续弱",
+          "reason": "5日跌-16.9%，今日续跌-6.6%，弱股持续弱",
+          "price": 0,
+          "pct": -6.57,
+          "amount": 0,
+          "industry": "",
+          "pattern": "",
+          "boards": 0
+        },
+        {
+          "code": "688636",
+          "name": "智明达",
+          "dimension": "极端弱势",
+          "reason": "5日跌-31.9%，今日-1.5%",
+          "price": 0,
+          "pct": -1.48,
+          "amount": 0,
+          "industry": "",
+          "pattern": "",
+          "boards": 0
+        }
+      ]
+    },
     {
       "date": "2026-07-21",
       "bulls": [
