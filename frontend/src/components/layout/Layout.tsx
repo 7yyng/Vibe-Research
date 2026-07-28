@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 import { useDarkMode } from "@/hooks/useDarkMode";
 
 const APP_VERSION = "v0.1.3";
-const REPO_URL = "https://github.com/simonlin1212/Vibe-Research";
+const REPO_URL = "https://github.com/7yyng/Vibe-Research";
 const SITE_URL = "https://www.simonlin.net"; // 作者主页
 
 const NAV = [
