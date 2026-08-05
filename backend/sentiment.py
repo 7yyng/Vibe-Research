@@ -197,16 +197,22 @@ def _save_history(data: dict):
         pass
 
 
-def _save_system_history(date: str, temperature: float, state: str):
-    """每次计算系统温度时自动存一条历史记录（用于校准对比）。"""
+def _save_system_history(date: str, temperature: float, state: str, dims: dict | None = None):
+    """每次计算系统温度时自动存一条历史记录（用于校准对比）。
+
+    dims: 当日各维度得分 {"tug_of_war": 60.0, ...}，用于按维度归因学习。
+    """
     if not date:
         return
     data = _load_history()
     sys_hist = data.setdefault("system_history", [])
     sys_hist = [s for s in sys_hist if s.get("date") != date]
-    sys_hist.append({"date": date, "temperature": temperature, "state": state})
+    sys_hist.append({
+        "date": date, "temperature": temperature, "state": state,
+        "dims": dims or {},
+    })
     sys_hist.sort(key=lambda s: s["date"], reverse=True)
-    data["system_history"] = sys_hist[:90]
+    data["system_history"] = sys_hist[:120]
     _save_history(data)
 
 
@@ -297,6 +303,15 @@ def compute_temperature() -> dict:
         else:
             tug_state = "双方胶着"
 
+    # ── vibe-astock 派生指标（赚钱效应/晋级率/连板溢价/梯队断层/情绪周期）──
+    # 异步取，不阻塞温度计算（派生指标要拉 akshare 可能较慢）
+    derived = {}
+    try:
+        import vibe_bridge
+        derived = vibe_bridge.get_emotion_subscores(main_date)
+    except Exception:
+        pass
+
     result = {
         "date": main_date,
         "data_warning": data_warning,
@@ -316,6 +331,7 @@ def compute_temperature() -> dict:
         },
         "extreme_movers": extreme,
         "yzt_stocks": emo.get("yzt_stocks", []),   # 昨日涨停今日表现（多空辨识度）
+        "derived_metrics": derived,  # vibe-astock 派生指标
         "raw": {
             "zt_count": zt, "dt_count": dt, "zb_count": emo.get("zb_count", 0),
             "max_boards": emo.get("max_boards", 0),
@@ -325,7 +341,12 @@ def compute_temperature() -> dict:
     }
 
     # 自动保存系统温度到历史（每次计算都存，用于校准对比）
-    _save_system_history(main_date, round(total, 1), state)
+    _save_system_history(main_date, round(total, 1), state, {
+        "tug_of_war": round(tug_score, 1),
+        "real_profit": round(profit_score, 1),
+        "lianban": round(lianban_score, 1),
+        "extreme": round(extreme_score, 1),
+    })
 
     return result
 
@@ -364,32 +385,72 @@ def save_user_input(date: str, temperature: int, notes: str = "",
 
 
 def _auto_calibrate(data: dict):
-    """根据历史用户 vs 系统偏差，微调权重。"""
+    """根据历史用户 vs 系统偏差，微调权重 —— 按维度归因学习。
+
+    学习逻辑（用户的校正就是"老师"，系统逐步对齐）：
+      1. 收集最近 N 天里用户与系统温度都存在的记录，算平均偏差 avg_diff。
+      2. 若系统持续高估（avg_diff < -阈值）：说明系统过于看重某些维度的"热信号"，
+         把最近几日均值最高的维度权重下调、最低的维度权重上调（向用户口味收敛）。
+      3. 若系统持续低估（avg_diff > 阈值）：反向调整。
+      4. 权重范围约束：tug_of_war 0.35-0.60，其余维度 0.05-0.35。
+    """
     records = data.get("records", [])
     sys_hist = data.get("system_history", [])
-    if len(records) < 5:
+    if len(records) < 3:   # 样本太少不调整（原为5，放宽以更快启动学习）
         return
     w = data.get("weights", {})
     w = {k: w.get(k, DEFAULT_WEIGHTS[k]) for k in DEFAULT_WEIGHTS}
 
-    sys_map = {s["date"]: s["temperature"] for s in sys_hist}
+    sys_map = {s["date"]: s for s in sys_hist}
     diffs = []
+    samples: list[dict] = []   # 每个样本：{diff, dims}
     for r in records[:10]:
         ut = r.get("user_temperature")
-        st = sys_map.get(r["date"])
-        if ut is not None and st is not None:
-            diffs.append(ut - st)
+        s = sys_map.get(r["date"])
+        if ut is not None and s is not None:
+            st = s.get("temperature")
+            if st is not None:
+                diffs.append(ut - st)
+                samples.append({"diff": ut - st, "dims": s.get("dims", {})})
     if not diffs:
         return
 
     avg_diff = sum(diffs) / len(diffs)
-    # 系统持续高估（avg_diff < -5）：降低拔河权重，提升赚钱效应权重
-    if avg_diff < -5:
-        w["tug_of_war"] = max(w["tug_of_war"] - 0.03, 0.35)
-        w["real_profit"] = min(w["real_profit"] + 0.03, 0.35)
-    elif avg_diff > 5:
-        w["tug_of_war"] = min(w["tug_of_war"] + 0.03, 0.60)
-        w["real_profit"] = max(w["real_profit"] - 0.03, 0.15)
+    step = 0.02 if len(diffs) >= 5 else 0.01   # 样本越多，调整步长越大
+
+    # ── 按维度归因：看最近样本中哪些维度与偏差方向最相关 ──
+    # 对每个维度：算"维度得分均值"在偏差样本里的方向
+    if len(samples) >= 3:
+        dim_keys = list(DEFAULT_WEIGHTS.keys())
+        dim_avg: dict[str, float] = {}
+        for k in dim_keys:
+            vals = [s["dims"].get(k) for s in samples if s["dims"].get(k) is not None]
+            dim_avg[k] = sum(vals) / len(vals) if vals else None
+
+        valid = {k: v for k, v in dim_avg.items() if v is not None}
+        if len(valid) >= 2 and abs(avg_diff) >= 3:
+            if avg_diff < 0:
+                # 系统高估 → 降低得分最高维度的权重，提升得分最低维度的权重
+                hi_k = max(valid, key=valid.get)
+                lo_k = min(valid, key=valid.get)
+                if hi_k != lo_k:
+                    w[hi_k] = max(w[hi_k] - step, 0.05 if hi_k != "tug_of_war" else 0.35)
+                    w[lo_k] = min(w[lo_k] + step, 0.35 if lo_k != "tug_of_war" else 0.60)
+            else:
+                # 系统低估 → 反向
+                hi_k = max(valid, key=valid.get)
+                lo_k = min(valid, key=valid.get)
+                if hi_k != lo_k:
+                    w[lo_k] = max(w[lo_k] - step, 0.05 if lo_k != "tug_of_war" else 0.35)
+                    w[hi_k] = min(w[hi_k] + step, 0.35 if hi_k != "tug_of_war" else 0.60)
+    else:
+        # 样本不足：沿用整体方向调整（拔河 vs 赚钱效应）
+        if avg_diff < -5:
+            w["tug_of_war"] = max(w["tug_of_war"] - step, 0.35)
+            w["real_profit"] = min(w["real_profit"] + step, 0.35)
+        elif avg_diff > 5:
+            w["tug_of_war"] = min(w["tug_of_war"] + step, 0.60)
+            w["real_profit"] = max(w["real_profit"] - step, 0.15)
     data["weights"] = w
     _save_history(data)
 
@@ -457,3 +518,94 @@ def get_temperature_history(days: int = 15) -> dict:
             "has_system": sys_s is not None, "has_user": user_r is not None,
         })
     return {"rows": rows, "total_system": len(sys_hist), "total_user": len(records)}
+
+
+def get_temperature_view(target_date: str | None = None) -> dict:
+    """温度总览：当日温度 + 昨日温度对比 + 用户校准值 + 权重体系 + 学习进度。
+
+    target_date: 指定查看某天的温度（从本地历史读）。不传或为空则实时计算当天。
+
+    返回结构：
+    {
+        "date": "2026-07-28",
+        "system": {"temperature": 62.5, "state": "偏热", "tug_state": "..."},
+        "prev": {"date": "2026-07-25", "temperature": 48.0, "state": "中性", "diff": 14.5},
+        "user": {"temperature": 70, "notes": "...", "diff": 7.5} | None,
+        "weights": {"tug_of_war": 0.5, ...},
+        "learning": {
+            "record_count": 8,        # 用户已校正天数
+            "avg_diff": 3.2,          # 历史平均偏差（用户-系统）
+            "trend": "系统略低估" | "系统略高估" | "接近吻合" | "样本不足",
+        }
+    }
+    """
+    data = _load_history()
+    sys_hist = data.get("system_history", [])
+    records = data.get("records", [])
+
+    # ── 当日温度 ──
+    if target_date:
+        # 历史模式：从 system_history 找该日期的快照，不调网络
+        snap = next((s for s in sys_hist if s.get("date") == target_date), None)
+        if snap:
+            sys_temp = snap.get("temperature")
+            sys_state = snap.get("state")
+        else:
+            sys_temp, sys_state = None, None
+        today_date = target_date
+    else:
+        # 今天：实时计算（失败则降级读历史最近一条）
+        try:
+            today = compute_temperature()
+            today_date = today["date"]
+            sys_temp = today["temperature"]
+            sys_state = today.get("state")
+        except Exception:
+            today_date = ""
+            sys_temp, sys_state = None, None
+
+    # ── 昨日温度：找 target_date 之前最近有系统温度记录的一天 ──
+    prev_date, prev_temp, prev_state = "", None, None
+    for s in sorted(sys_hist, key=lambda x: x["date"], reverse=True):
+        if s.get("date") < today_date:
+            prev_date = s.get("date", "")
+            prev_temp = s.get("temperature")
+            prev_state = s.get("state")
+            break
+
+    # ── 用户校准值 ──
+    user_rec = next((r for r in records if r.get("date") == today_date), None)
+    user_temp = user_rec.get("user_temperature") if user_rec else None
+    user_notes = user_rec.get("user_notes", "") if user_rec else ""
+
+    # ── 权重体系 + 学习进度 ──
+    w = {k: data.get("weights", {}).get(k, DEFAULT_WEIGHTS[k]) for k in DEFAULT_WEIGHTS}
+    sys_map = {s["date"]: s.get("temperature") for s in sys_hist}
+    diffs = []
+    for r in records[:15]:
+        ut = r.get("user_temperature")
+        st = sys_map.get(r.get("date"))
+        if ut is not None and st is not None:
+            diffs.append(ut - st)
+    avg_diff = round(sum(diffs) / len(diffs), 1) if diffs else None
+    if not diffs:
+        trend = "样本不足（校正≥3天后系统开始学习）"
+    elif avg_diff < -5:
+        trend = "系统略高估，权重正向你的口味收敛"
+    elif avg_diff > 5:
+        trend = "系统略低估，权重正向你的口味收敛"
+    else:
+        trend = "接近吻合，权重体系已较贴合你的判断"
+
+    return {
+        "date": today_date,
+        "system": {"temperature": sys_temp, "state": sys_state},
+        "prev": {"date": prev_date, "temperature": prev_temp, "state": prev_state,
+                 "diff": (round(sys_temp - prev_temp, 1)
+                          if (sys_temp is not None and prev_temp is not None) else None)},
+        "user": {"temperature": user_temp, "notes": user_notes,
+                 "diff": (round(user_temp - sys_temp, 1)
+                          if (user_temp is not None and sys_temp is not None) else None)},
+        "weights": w,
+        "learning": {"record_count": len(records), "avg_diff": avg_diff, "trend": trend},
+    }

@@ -28,6 +28,7 @@ import myreports as mr
 import sentiment as senti
 import core_stocks as cs
 import review_plans
+import ai_reviews
 
 app = FastAPI(title="Vibe-Research API", version="0.1.3")
 
@@ -119,6 +120,149 @@ def chat(req: ChatReq):
                 yield json.dumps(ev, ensure_ascii=False) + "\n"
         except Exception as e:  # noqa: BLE001 — 运行时错误以流内事件上报，不中断连接
             yield json.dumps({"type": "error", "message": f"对话失败：{e}"}, ensure_ascii=False) + "\n"
+
+    return StreamingResponse(gen(), media_type="application/x-ndjson")
+
+
+# ── AI 盘面研判（自动生成/存储/编辑/对话调教） ──
+
+@app.get("/api/ai-reviews")
+async def api_get_ai_reviews(limit: int = 30):
+    """获取AI研判历史列表。"""
+    return {"data": ai_reviews.get_ai_reviews(limit)}
+
+
+@app.get("/api/ai-reviews/latest")
+async def api_get_latest_ai_review(date: str | None = None):
+    """获取某天的AI研判（含focus/编辑版/对话历史）。不传date返回最新。"""
+    return {"data": ai_reviews.get_ai_review(date)}
+
+
+@app.post("/api/ai-reviews/save")
+async def api_save_ai_review(req: Request):
+    """保存AI研判结果（自动生成或手动触发后保存）。"""
+    body = await req.json()
+    date = body.get("date", "")
+    focus = body.get("focus", {})
+    raw_text = body.get("raw_text", "")
+    source = body.get("source", "manual")
+    if not date or not focus:
+        raise HTTPException(400, "date 和 focus 不能为空")
+    return {"data": ai_reviews.save_ai_review(date, focus, raw_text, source)}
+
+
+@app.post("/api/ai-reviews/edit")
+async def api_edit_ai_review(req: Request):
+    """用户手动编辑研判内容。"""
+    body = await req.json()
+    date = body.get("date", "")
+    edited_text = body.get("edited_text", "")
+    if not date:
+        raise HTTPException(400, "date 不能为空")
+    return {"data": ai_reviews.update_edited_text(date, edited_text)}
+
+
+@app.post("/api/ai-reviews/chat")
+async def api_ai_review_chat(req: Request):
+    """AI研判对话调教：用户与AI多轮对话，修正研判方向。
+
+    流式返回AI回复（NDJSON），同时把对话存入历史。
+    """
+    body = await req.json()
+    date = body.get("date", "")
+    messages = body.get("messages", [])
+    llm_cfg = body.get("llm", {})
+    context_raw = body.get("context", "")
+
+    if not messages:
+        raise HTTPException(400, "messages 不能为空")
+
+    # 如果没有 date，从最新复盘计划推断
+    if not date:
+        try:
+            latest_plan = review_plans.get_latest_review_plan()
+            date = latest_plan.get("date", "") if latest_plan else ""
+        except Exception:
+            date = ""
+    if not date:
+        from datetime import datetime, timezone, timedelta
+        bj = timezone(timedelta(hours=8))
+        date = datetime.now(bj).strftime("%Y-%m-%d")
+    if not llm_cfg or not llm_cfg.get("model"):
+        raise HTTPException(400, "缺少模型配置")
+
+    # 获取当前研判内容作为上下文
+    review = ai_reviews.get_ai_review(date)
+    focus = review.get("focus") or {}
+    edited = review.get("edited_text", "")
+    raw = review.get("raw_text", "")
+
+    # 获取用户最新复盘计划（研判往用户计划靠）
+    plan = review_plans.get_latest_review_plan(date)
+    plan_text = plan.get("plan_text", "") if plan else ""
+
+    # 获取历史复盘风格
+    plan_ctx = review_plans.get_review_plans_for_ai()
+    style_summary = plan_ctx.get("user_style_summary", "")
+
+    # 构建对话上下文
+    context_parts = []
+    if context_raw:
+        context_parts.append(context_raw)
+    if focus:
+        context_parts.append(f"## 当前AI研判结果\n{json.dumps(focus, ensure_ascii=False, indent=2)}")
+    if edited:
+        context_parts.append(f"## 用户修改后的研判\n{edited}")
+    if raw and not focus:
+        context_parts.append(f"## AI原始研判文本\n{raw}")
+    if plan_text:
+        context_parts.append(f"## 用户{date}复盘计划（研判需往此方向靠拢）\n{plan_text}")
+    if style_summary:
+        context_parts.append(f"## 用户复盘风格摘要\n{style_summary}")
+
+    context_parts.append(
+        "## 你的角色\n"
+        "你是用户的炒股助手，帮助用户复盘和研判盘面。你的职责：\n"
+        "1. 根据用户反馈修正研判方向（情绪档位/活跃方向/风险等）\n"
+        "2. 指出用户复盘中的不足（遗漏的维度、逻辑漏洞、情绪偏差等）\n"
+        "3. 如果用户上传了复盘计划，研判要往用户计划方向靠拢\n"
+        "4. 保持客观，基于数据说话，不荐股不给买卖点\n"
+        "5. 对话简洁有力，像专业交易员之间的交流"
+    )
+    context = "\n\n".join(context_parts)
+
+    is_cli = llm_cfg.get("provider", "").startswith("cli-")
+    if is_cli:
+        kind = llm_cfg["provider"][4:]
+        if not cli_runtime.detect_cli(kind):
+            raise HTTPException(400, f"未检测到「{kind}」对应的本机命令")
+    elif not llm_cfg.get("apiKey") or not llm_cfg.get("baseURL"):
+        raise HTTPException(400, "缺少 Base URL 或 API Key")
+
+    # 保存用户消息
+    last_user_msg = ""
+    for m in reversed(messages):
+        if m.get("role") == "user":
+            last_user_msg = m.get("content", "")
+            break
+    if last_user_msg:
+        ai_reviews.add_chat_message(date, "user", last_user_msg)
+
+    cfg = llm_cfg
+
+    def gen():
+        full_reply = ""
+        try:
+            events = (chat_layer.run_chat_cli_stream if is_cli else chat_layer.run_chat_stream)(cfg, messages, context)
+            for ev in events:
+                yield json.dumps(ev, ensure_ascii=False) + "\n"
+                if ev.get("type") == "delta":
+                    full_reply += ev.get("text", "")
+        except Exception as e:  # noqa: BLE001
+            yield json.dumps({"type": "error", "message": f"对话失败：{e}"}, ensure_ascii=False) + "\n"
+        # 保存AI回复
+        if full_reply:
+            ai_reviews.add_chat_message(date, "assistant", full_reply)
 
     return StreamingResponse(gen(), media_type="application/x-ndjson")
 
@@ -282,15 +426,44 @@ def market_turnover_top():
         raise HTTPException(502, f"成交额榜异常：{e}") from e
 
 
+@app.get("/api/market/session")
+def market_session():
+    """此刻实时行情属于哪一场（盘前/盘中/已收盘/非交易日）。"""
+    try:
+        return {"data": market.get_market_session()}
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"交易时段判断异常：{e}") from e
+
+
+@app.get("/api/market/live-emotion")
+def market_live_emotion():
+    """今日实时打板情绪（盘中随盘变化）。与 /market/emotion（已收盘定稿）分开。"""
+    try:
+        return {"data": market.get_live_emotion()}
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"实时打板情绪异常：{e}") from e
+
+
 # ---------- 情绪温度量化系统 ----------
 
 @app.get("/api/sentiment/temperature")
-def sentiment_temperature():
-    """当日情绪温度（5 维加权打分 0-100 + 因子分解）。"""
+def sentiment_temperature(date: str | None = None):
+    """当日情绪温度（5 维加权打分 0-100 + 因子分解）。支持 date 查看历史。"""
     try:
+        if date:
+            return {"data": senti.get_temperature_view(date)}
         return {"data": senti.compute_temperature()}
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"情绪温度计算异常：{e}") from e
+
+
+@app.get("/api/sentiment/view")
+def sentiment_view(date: str | None = None):
+    """温度总览：当日温度 + 昨日温度对比 + 用户校准值 + 权重体系 + 学习进度。"""
+    try:
+        return {"data": senti.get_temperature_view(date)}
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"温度总览异常：{e}") from e
 
 
 class UserSentimentInput(BaseModel):
@@ -327,13 +500,97 @@ def sentiment_temperature_history(days: int = 15):
         raise HTTPException(502, f"温度历史异常：{e}") from e
 
 
+# ---------- Vibe-Astock 派生指标 / 明日验证 / 反思回看 ----------
+
+import vibe_bridge  # noqa: E402
+
+
+@app.get("/api/market/derived-emotion")
+def market_derived_emotion(date: str | None = None):
+    """vibe-astock 派生情绪指标：赚钱效应/晋级率/连板溢价/梯队断层/情绪周期。支持 date 查看历史。"""
+    try:
+        return {"data": vibe_bridge.get_derived_emotion(date)}
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"派生情绪指标异常：{e}") from e
+
+
+@app.get("/api/market/history")
+def market_history(date: str = Query(...)):
+    """某天的历史市场数据（涨跌家数/封板质量/亏钱效应等）。从 vibe-astock 缓存读取。"""
+    try:
+        return {"data": vibe_bridge.get_historical_market(date)}
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"历史市场数据异常：{e}") from e
+
+
+@app.get("/api/review/dates")
+def review_dates():
+    """已跑过复盘的交易日列表（新→旧），供日期选择器用。"""
+    try:
+        return {"data": {"dates": vibe_bridge.get_review_dates()}}
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"复盘日期列表获取异常：{e}") from e
+
+
+@app.get("/api/review/latest")
+def review_latest(date: str | None = None):
+    """读某天的复盘存档（结构化 focus + 指标 + 市场事实）；不传 date 读最近一份。"""
+    try:
+        review = vibe_bridge.get_review(date)
+        if not review:
+            return {"data": {"available": False, "reason": "该日期无复盘记录"}}
+        # 只返回前端需要的字段，避免过大
+        focus = review.get("focus") or {}
+        return {"data": {
+            "available": True,
+            "target_date": review.get("target_date") or date,
+            "trade_date": review.get("trade_date"),
+            "generated_at": review.get("generated_at"),
+            "focus": focus,
+            "focus_md": review.get("focus_md"),
+            "warnings": review.get("warnings", []),
+            # 历史模式：用存档里的市场事实 + 情绪指标渲染盘面
+            "market_facts": review.get("market_facts") or {},
+            "emotion_metrics": review.get("emotion_metrics") or {},
+        }}
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"复盘读取异常：{e}") from e
+
+
+@app.get("/api/review/verification")
+def review_verification(date: str | None = None):
+    """某天复盘的明日验证条件（可核验的市场层面读数）。不传 date 读最近一份。"""
+    try:
+        return {"data": vibe_bridge.get_latest_verification(date)}
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"验证条件获取异常：{e}") from e
+
+
+@app.get("/api/review/reflection")
+def review_reflection():
+    """最近一次 T+1 命中回看（预测 vs 次日实际）。"""
+    try:
+        return {"data": vibe_bridge.get_latest_reflection()}
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"回看获取异常：{e}") from e
+
+
+@app.get("/api/review/scoreboard")
+def review_scoreboard():
+    """AI 判断累计战绩（情绪档位命中率/方向命中率）。"""
+    try:
+        return {"data": vibe_bridge.get_scoreboard()}
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"战绩获取异常：{e}") from e
+
+
 # ---------- 每日核心标的系统（多方/空方，用于对比市场情绪）----------
 
 @app.get("/api/core-stocks")
-def core_stocks_today():
-    """今日核心标的（多方+空方，系统选+用户校准覆盖）。"""
+def core_stocks_today(date: str | None = None):
+    """今日核心标的（多方+空方，系统选+用户校准覆盖）。支持 date 参数查看历史。"""
     try:
-        return {"data": cs.get_core_stocks_with_calibration()}
+        return {"data": cs.get_core_stocks_with_calibration(date)}
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"核心标的获取异常：{e}") from e
 
@@ -690,8 +947,8 @@ async def api_get_review_plans(limit: int = 30):
     return {"data": review_plans.get_review_plans(limit)}
 
 @app.get("/api/review-plans/latest")
-async def api_get_latest_review_plan():
-    return {"data": review_plans.get_latest_review_plan()}
+async def api_get_latest_review_plan(date: str | None = None):
+    return {"data": review_plans.get_latest_review_plan(date)}
 
 @app.get("/api/review-plans/ai-context")
 async def api_get_review_plans_for_ai():
@@ -706,6 +963,34 @@ async def api_save_review_plan(req: Request):
     if not date or not plan_text:
         return {"error": "date and plan_text are required"}, 400
     return {"data": review_plans.save_review_plan(date, plan_text, tags)}
+
+
+@app.post("/api/review-plans/remove-tag")
+async def api_remove_plan_tag(req: Request):
+    """从复盘计划中删除一个标签，同时加入排除列表供 AI 学习。"""
+    body = await req.json()
+    date = body.get("date", "")
+    tag = body.get("tag", "")
+    exclude = body.get("exclude", True)
+    if not date or not tag:
+        raise HTTPException(400, "date 和 tag 不能为空")
+    return {"data": review_plans.remove_tag_from_plan(date, tag, exclude)}
+
+
+@app.get("/api/review-plans/keyword-preferences")
+async def api_keyword_preferences():
+    """获取用户关键词偏好（排除列表 + 学习统计）。"""
+    return {"data": review_plans.get_keyword_preferences()}
+
+
+@app.post("/api/review-plans/restore-keyword")
+async def api_restore_keyword(req: Request):
+    """恢复一个被排除的关键词。"""
+    body = await req.json()
+    keyword = body.get("keyword", "")
+    if not keyword:
+        raise HTTPException(400, "keyword 不能为空")
+    return {"data": review_plans.remove_keyword_exclude(keyword)}
 
 
 # ── 让 AI 复盘 ──

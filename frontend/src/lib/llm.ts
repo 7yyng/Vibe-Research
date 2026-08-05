@@ -56,13 +56,14 @@ export interface ChatHandlers {
 // 流式调后端 /api/chat（NDJSON：每行一个事件 {type: tool|delta|done|error}）。
 // 边流边回调 onDelta/onTool；返回累积的最终 {content, trace, rounds}。
 // signal：调用方可传 AbortController.signal，用户关面板/换问题时中止请求（省订阅/API 额度）。
-export async function chatStream(messages: ChatMsg[], context: string, handlers: ChatHandlers = {}, signal?: AbortSignal): Promise<ChatResult> {
+// endpoint：默认 /api/chat；传 /api/ai-review 可让后端注入用户复盘计划风格供 AI 学习。
+export async function chatStream(messages: ChatMsg[], context: string, handlers: ChatHandlers = {}, signal?: AbortSignal, endpoint = "/api/chat"): Promise<ChatResult> {
   const llm = loadLlm();
   if (!llm) throw new ApiError("尚未接入 AI，请先在「接入 AI」里配置", 400);
 
   let resp: Response;
   try {
-    resp = await fetch("/api/chat", {
+    resp = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...authHeaders() },
       body: JSON.stringify({ messages, context, llm }),

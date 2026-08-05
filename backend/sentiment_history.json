@@ -1,6 +1,20 @@
 {
   "records": [
     {
+      "date": "2026-08-05",
+      "user_temperature": 80,
+      "user_notes": "",
+      "user_dim_scores": {},
+      "saved_at": "2026-08-05 14:24"
+    },
+    {
+      "date": "2026-08-04",
+      "user_temperature": 80,
+      "user_notes": "",
+      "user_dim_scores": {},
+      "saved_at": "2026-08-04 21:11"
+    },
+    {
       "date": "2026-07-28",
       "user_temperature": 60,
       "user_notes": "",
@@ -106,6 +120,31 @@
     "extreme": 0.1
   },
   "system_history": [
+    {
+      "date": "2026-08-05",
+      "temperature": 69.4,
+      "state": "偏热"
+    },
+    {
+      "date": "2026-08-04",
+      "temperature": 78.4,
+      "state": "沸点"
+    },
+    {
+      "date": "2026-08-03",
+      "temperature": 68.8,
+      "state": "偏热"
+    },
+    {
+      "date": "2026-08-01",
+      "temperature": 69.1,
+      "state": "偏热"
+    },
+    {
+      "date": "2026-07-31",
+      "temperature": 68.8,
+      "state": "偏热"
+    },
     {
       "date": "2026-07-28",
       "temperature": 63.8,

@@ -51,7 +51,7 @@ export async function downloadReport(id: string, name: string): Promise<void> {
   URL.revokeObjectURL(url);
 }
 
-async function request<T>(path: string, method: "GET" | "POST" | "DELETE" = "GET", body?: unknown): Promise<T> {
+async function request<T>(path: string, method: "GET" | "POST" | "DELETE" = "GET", body?: unknown, timeoutMs?: number): Promise<T> {
   let resp: Response;
   const headers: Record<string, string> = { ...authHeaders() };
   const opts: RequestInit = { method };
@@ -60,10 +60,16 @@ async function request<T>(path: string, method: "GET" | "POST" | "DELETE" = "GET
     opts.body = JSON.stringify(body);
   }
   if (Object.keys(headers).length > 0) opts.headers = headers;
+  // 超时控制：默认 8 秒，核心标的等慢接口可通过 timeoutMs 自定义
+  const controller = new AbortController();
+  opts.signal = controller.signal;
+  const timeout = setTimeout(() => controller.abort(), timeoutMs ?? 8000);
   try {
     resp = await fetch(`/api${path}`, opts);
-  } catch {
-    throw new ApiError("连接不到后端，请先启动 backend（uvicorn app:app --port 8900）", 0);
+  } catch (e) {
+    throw new ApiError(e instanceof DOMException && e.name === "AbortError" ? `请求超时：${path}` : "连接不到后端，请先启动 backend（uvicorn app:app --port 8900）", 0);
+  } finally {
+    clearTimeout(timeout);
   }
   let payload: any = null;
   try {
@@ -80,7 +86,7 @@ async function request<T>(path: string, method: "GET" | "POST" | "DELETE" = "GET
   return (payload?.data ?? payload) as T;
 }
 
-const get = <T>(path: string) => request<T>(path, "GET");
+const get = <T>(path: string, timeoutMs?: number) => request<T>(path, "GET", undefined, timeoutMs);
 
 export interface Quote {
   name: string; price: number; last_close: number; change_pct: number;
@@ -140,18 +146,25 @@ export interface MarketOverview {
   sentiment: MarketSentiment; sectors: SectorFlow[]; updated: string;
 }
 
-// 短线情绪：连板梯队 / 最高连板 / 炸板率 / 封板率 / 晋级率 / 涨跌停家数 + 连板股清单（客观公开榜单）
+// 短线情绪：连板梯队 / 最高连板 / 炸板率 / 封板率 / 晋级率 / 涨跌停家数 + 连板/首板清单（客观公开榜单）
 export interface EmotionTier { boards: number; count: number; plus: boolean }
 export interface LianbanStock {
   code: string; name: string; boards: number;
   price: number; pct: number; amount: number | null; float_cap: number | null; industry: string;
+  reason?: string;              // 涨停原因（同花顺）
+  first_seal_time?: string;     // 首次封板时间
+  last_seal_time?: string;      // 最后封板时间
+  break_count?: number;         // 炸板次数
+  pattern?: string;             // 涨停形态
+  seal_fund?: number | null;    // 封板资金
 }
 export interface ShortTermEmotion {
   date: string;
   zt_count: number; dt_count: number; zb_count: number;
-  max_boards: number; lianban_count: number;
+  max_boards: number; lianban_count: number; shouban_count?: number;
   ladder: EmotionTier[];
   lianban_stocks: LianbanStock[];
+  shouban_stocks?: LianbanStock[];
   seal_rate: number | null; break_rate: number | null; promotion_rate: number | null;
   yzt_count: number;
 }
@@ -162,7 +175,13 @@ export interface TurnoverStock {
   price: number | null; pct: number | null;
   amount: number | null; mcap: number | null; float_cap: number | null; industry: string;
 }
-export interface TurnoverTop { stocks: TurnoverStock[]; updated: string }
+export interface TurnoverTop {
+  stocks: TurnoverStock[];
+  updated: string;
+  is_historical?: boolean;
+  historical_date?: string;
+  historical_note?: string;
+}
 
 export interface RadarItem {
   title: string; url: string; time: string; source: string; summary?: string; zh?: string;
@@ -217,6 +236,35 @@ export interface GlobalIndex {
   key: string; name: string; region: string;
   price: number | null; change_pct: number | null;
 }
+
+// 交易时段判断
+export interface MarketSession {
+  now: string;
+  today: string;
+  quotes_of: string | null;
+  is_today: boolean;
+  phase: string;
+  label: string;
+}
+
+// 今日实时打板情绪（盘中随盘变化，与 ShortTermEmotion 分开）
+export interface LiveEmotion {
+  available: boolean;
+  reason?: string;
+  date?: string;
+  as_of?: string;
+  phase?: string;
+  zt_count?: number;
+  dt_count?: number | null;
+  zb_count?: number | null;
+  max_boards?: number;
+  lianban_count?: number;
+  seal_rate?: number | null;
+  break_rate?: number | null;
+  promotion_rate?: number | null;
+  promotion_base?: number | null;
+  promotion_base_date?: string | null;
+}
 export interface GlobalQuote {
   code: string; name: string;
   price: number | null; open: number | null; high: number | null; low: number | null;
@@ -233,11 +281,213 @@ export interface GlobalStock {
   quote: GlobalQuote; metrics: GlobalMetrics | null;
 }
 
+// ── Vibe-Astock 派生情绪指标 ──
+export interface DerivedEmotion {
+  date: string;
+  prev_date?: string;
+  money_effect?: {
+    available: boolean; avg?: number; median?: number;
+    positive_rate?: number; limit_up_again_rate?: number; source?: string;
+  };
+  promotion?: {
+    available: boolean; overall?: { base: number; promoted: number; rate: number | null };
+    tiers?: Record<string, { base: number; promoted: number; rate: number | null }>;
+  };
+  consec_premium?: {
+    available: boolean; avg?: number; median?: number; positive_rate?: number;
+  };
+  ladder_gap?: {
+    available: boolean; highest?: number; continuous?: boolean; gaps?: number[];
+    tiers?: Record<string, number>;
+  };
+  cycle?: {
+    available: boolean; day_n?: number; rising?: boolean; trend?: string;
+    pctile?: number; trough_date?: string;
+  };
+}
+
+// ── 市场情绪温度（含昨日对比 + 权重体系 + 学习进度）──
+export interface TemperatureView {
+  date: string;
+  system: { temperature: number | null; state?: string | null };
+  prev: { date?: string; temperature: number | null; state?: string | null; diff?: number | null };
+  user: { temperature: number | null; notes?: string; diff?: number | null };
+  weights: Record<string, number>;
+  learning: { record_count: number; avg_diff: number | null; trend: string };
+}
+
+// ── 明日验证条件 ──
+export interface VerificationItem {
+  metric: string; label?: string; direction: string; reason?: string;
+  unit?: string; eps?: number; base_value?: number | null; higher_is_hotter?: boolean;
+}
+export interface VerificationData {
+  available: boolean;
+  review_date?: string;
+  emotion_phase?: string;
+  items?: VerificationItem[];
+  reason?: string;
+  is_historical?: boolean;
+  historical_note?: string;
+}
+
+// ── T+1 命中回看 ──
+export interface ReflectionData {
+  available: boolean;
+  prediction_date?: string; eval_date?: string; emotion_phase?: string;
+  overall_next_ret?: number | null; direction_hit_rate?: number | null;
+  direction_hits?: number; direction_samples?: number;
+  phase_eval?: { phase: string; hit: boolean | null; provisional?: boolean };
+  verification?: Array<{
+    metric: string; label: string; expect: string; actual: string | null;
+    verified: boolean | null; prev_value: number | null; cur_value: number | null;
+  }>;
+  reason?: string;
+}
+
+// ── 累计战绩 ──
+export interface Scoreboard {
+  phase?: {
+    decided: number; hits: number; flat: number;
+    next_day_direction_rate?: number | null; enough_samples: boolean;
+    by_phase?: Record<string, { n: number; hit: number; hit_rate?: number }>;
+  };
+  stock?: { days: number; samples: number; hits: number; hit_rate?: number | null };
+  recent?: Array<{ prediction_date: string; eval_date: string; phase?: string; hit?: boolean | null }>;
+}
+
+// ── 复盘存档（结构化 AI 研判） ──
+export interface FocusDirection {
+  direction: string;
+  logic: string;
+  risk: string;
+  leader_candidates?: string[];
+}
+export interface TomorrowFocus {
+  emotion_phase: string;
+  market_oneliner: string;
+  focus_directions: FocusDirection[];
+  risk_alerts: string[];
+  verification_items?: VerificationItem[];
+}
+export interface ReviewData {
+  available: boolean;
+  reason?: string;
+  target_date?: string;
+  trade_date?: string;
+  generated_at?: string;
+  focus: TomorrowFocus | null;
+  focus_md?: string;
+  warnings?: string[];
+  // 历史模式：存档里的市场事实 + 情绪指标
+  market_facts?: MarketFacts;
+  emotion_metrics?: Record<string, unknown>;
+}
+
+// ── 市场事实（历史存档用）──
+export interface MarketFacts {
+  breadth?: {
+    available?: boolean; date?: string;
+    up?: number; down?: number; flat?: number; amount_yi?: number;
+    up_down_scope?: string; universe?: number;
+    deep_up_5_incl?: number; deep_down_5?: number;
+  };
+  seal_quality?: {
+    available?: boolean; total?: number; never_broken?: number; never_broken_rate?: number;
+    opening_seconds?: number; late_seal?: number; reopened?: number; avg_broken_times?: number;
+  };
+  loss_effect?: {
+    available?: boolean; prev_date?: string; sample?: number;
+    deep_loss_5_count?: number; deep_loss_5_rate?: number;
+    deep_loss_7_count?: number; limit_down_count?: number;
+    worst?: number; market_limit_down?: number;
+  };
+  feedback_matrix?: {
+    available?: boolean; matrix?: Record<string, Record<string, number | undefined>>;
+  };
+  theme_structure?: {
+    available?: boolean; total_themes?: number; themes?: Array<{ name?: string; count?: number; pct?: number }>;
+  };
+  by_board?: {
+    available?: boolean; boards?: Array<{ board?: string; count?: number; zt?: number }>;
+  };
+}
+
+// ── 核心标的（多空三炮） ──
+export interface CoreStock {
+  code: string; name: string;
+  dimension?: string;   // 维度（地天板/反核/核按钮/连续跌停等）
+  reason?: string;      // 理由
+  pct?: number;         // 当日涨跌幅
+  today_price?: number;
+  today_pct?: number;
+  today_open?: number;
+  today_high?: number;
+  today_low?: number;
+  today_amount_wan?: number;
+  today_turnover?: number;
+  today_amplitude?: number;
+  tracking_days?: number;
+  history?: Array<{ date: string; side: string; dimension?: string; reason?: string; pct?: number }>;
+}
+export interface CoreStocksData {
+  today_date: string;
+  yesterday: {
+    date: string; bulls: CoreStock[]; bears: CoreStock[];
+    has_data: boolean; note?: string;
+  };
+  today: {
+    date: string;
+    system_bulls: CoreStock[]; system_bears: CoreStock[];
+    user_bulls: CoreStock[]; user_bears: CoreStock[];
+    merged_bulls: CoreStock[]; merged_bears: CoreStock[];
+    is_user_calibrated: boolean; note?: string;
+  };
+}
+
+// ── 复盘计划 ──
+export interface ReviewPlan {
+  date: string;
+  plan_text: string;
+  tags: string[];
+  auto_tags?: string[];
+  user_tags?: string[];
+  saved_at?: string;
+}
+export interface ReviewPlansData {
+  plans: ReviewPlan[];
+  total: number;
+}
+export interface ReviewPlansForAI {
+  recent_plans: ReviewPlan[];
+  total: number;
+  user_style_summary: string;
+}
+
+// ── AI 盘面研判（可编辑+对话调教）──
+export interface AiChatMsg {
+  role: "user" | "assistant";
+  content: string;
+  ts?: string;
+}
+export interface AiReviewRecord {
+  date: string;
+  focus: TomorrowFocus | null;
+  raw_text?: string;
+  source?: string;             // auto/manual/edited/chat
+  edited_text?: string;        // 用户修改后的研判
+  chat_history?: AiChatMsg[];  // 对话调教记录
+  generated_at?: string;
+  edited_at?: string;
+}
+
 export const api = {
   health: () => get<{ ok: boolean }>("/health"),
   indices: () => get<IndexQuote[]>("/indices"),
   marketOverview: () => get<MarketOverview>("/market/overview"),
   emotion: () => get<ShortTermEmotion>("/market/emotion"),
+  marketSession: () => get<MarketSession>("/market/session"),
+  liveEmotion: () => get<LiveEmotion>("/market/live-emotion"),
   turnoverTop: () => get<TurnoverTop>("/market/turnover-top"),
   globalIndices: () => get<GlobalIndex[]>("/global/indices"),
   globalStock: (symbol: string) => get<GlobalStock>(`/global/stock?symbol=${encodeURIComponent(symbol)}`),
@@ -272,4 +522,40 @@ export const api = {
   uploadReport: (name: string, contentB64: string) =>
     request<MyReport>("/myreports", "POST", { name, content_b64: contentB64 }),
   deleteReport: (id: string) => request<{ ok: boolean }>(`/myreports/${id}`, "DELETE"),
+  // Vibe-Astock 派生指标 / 验证 / 回看
+  derivedEmotion: (date?: string) => get<DerivedEmotion>(`/market/derived-emotion${date ? `?date=${date}` : ""}`),
+  // 历史市场数据（从 vibe-astock 缓存读取某天的涨跌家数/封板质量等）
+  marketHistory: (date: string) => get<MarketFacts>(`/market/history?date=${date}`),
+  // 市场情绪温度（今日+昨日对比+权重体系+学习进度）
+  temperatureView: (date?: string) => get<TemperatureView>(`/sentiment/view${date ? `?date=${date}` : ""}`),
+  saveTemperature: (date: string, temperature: number, notes = "") =>
+    request<{ ok: boolean; date: string }>("/sentiment/user-input", "POST", { date, temperature, notes }),
+  temperatureHistory: (days = 15) => get<{ rows: any[] }>(`/sentiment/temperature-history?days=${days}`),
+  verification: (date?: string) => get<VerificationData>(`/review/verification${date ? `?date=${date}` : ""}`),
+  reflection: () => get<ReflectionData>("/review/reflection"),
+  scoreboard: () => get<Scoreboard>("/review/scoreboard"),
+  // 复盘存档（按日期）
+  reviewDates: () => get<{ dates: string[] }>("/review/dates"),
+  reviewLatest: (date?: string) => get<ReviewData>(`/review/latest${date ? `?date=${date}` : ""}`),
+  // 核心标的（多空三炮）—— 支持 date 参数查看历史，30秒超时（历史日期调东财API较慢）
+  coreStocks: (date?: string) => get<CoreStocksData>(date ? `/core-stocks?date=${date}` : "/core-stocks", 30000),
+  saveCoreStocks: (date: string, bulls: CoreStock[], bears: CoreStock[]) =>
+    request<{ ok: boolean; date: string }>("/core-stocks/user-input", "POST", { date, bulls, bears }),
+  coreStocksHistory: () => get<{ history: any[]; record_count: number }>("/core-stocks/history"),
+  // 复盘计划 —— latestReviewPlan 支持 date 参数获取指定日期的计划
+  reviewPlans: (limit = 30) => get<ReviewPlansData>(`/review-plans?limit=${limit}`),
+  latestReviewPlan: (date?: string) => get<ReviewPlan>(`/review-plans/latest${date ? `?date=${date}` : ""}`),
+  saveReviewPlan: (date: string, plan_text: string, tags: string[] = []) =>
+    request<{ ok: boolean; date: string; tags: string[]; auto_tags: string[]; exclude_count: number }>("/review-plans/save", "POST", { date, plan_text, tags }),
+  removePlanTag: (date: string, tag: string, exclude = true) =>
+    request<{ ok: boolean; date: string; tags: string[]; auto_tags: string[] }>("/review-plans/remove-tag", "POST", { date, tag, exclude }),
+  keywordPreferences: () => get<{ excludes: string[]; user_added: string[]; exclude_count: number }>("/review-plans/keyword-preferences"),
+  restoreKeyword: (keyword: string) =>
+    request<{ ok: boolean }>("/review-plans/restore-keyword", "POST", { keyword }),
+  // AI 盘面研判（自动生成/存储/编辑/对话调教）
+  aiReviewLatest: (date?: string) => get<AiReviewRecord>(`/ai-reviews/latest${date ? `?date=${date}` : ""}`),
+  saveAiReview: (date: string, focus: TomorrowFocus, raw_text = "", source = "manual") =>
+    request<{ ok: boolean; date: string }>("/ai-reviews/save", "POST", { date, focus, raw_text, source }),
+  editAiReview: (date: string, edited_text: string) =>
+    request<{ ok: boolean; date: string }>("/ai-reviews/edit", "POST", { date, edited_text }),
 };

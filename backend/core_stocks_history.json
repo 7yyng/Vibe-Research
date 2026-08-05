@@ -1,6 +1,64 @@
 {
   "records": [
     {
+      "date": "2026-08-04",
+      "user_bulls": [
+        {
+          "reason": "7板连板龙头，T字板，市场情绪风向标",
+          "code": "003032",
+          "name": "传智教育",
+          "dimension": "连板龙头"
+        }
+      ],
+      "user_bears": [
+        {
+          "reason": "没有地板开反推容错好，但不符合计划",
+          "code": "605179",
+          "name": "一鸣食品",
+          "dimension": "强股补跌"
+        },
+        {
+          "reason": "借着情绪偷鸡上板失败",
+          "code": "603677",
+          "name": "奇德新材",
+          "dimension": "民爆高争"
+        },
+        {
+          "reason": "偷鸡上板失败",
+          "code": "603099",
+          "name": "神雾节能",
+          "dimension": "偷鸡上板"
+        }
+      ],
+      "saved_at": "2026-08-05 11:16"
+    },
+    {
+      "date": "2026-08-02",
+      "user_bulls": [
+        {
+          "code": "000533",
+          "name": "顺纳股份",
+          "dimension": "爆量分歧板",
+          "reason": "情绪分歧爆量板，主动上板"
+        },
+        {
+          "code": "603221",
+          "name": "爱丽家居",
+          "dimension": "连板高标",
+          "reason": ""
+        }
+      ],
+      "user_bears": [
+        {
+          "code": "001258",
+          "name": "立新能源",
+          "dimension": "天地板",
+          "reason": "核心高标龙头走弱"
+        }
+      ],
+      "saved_at": "2026-08-02 11:59"
+    },
+    {
       "date": "2026-07-28",
       "user_bulls": [
         {
@@ -282,6 +340,116 @@
     }
   ],
   "system_history": [
+    {
+      "date": "2026-08-04",
+      "bulls": [
+        {
+          "code": "003032",
+          "name": "传智教育",
+          "dimension": "连板龙头",
+          "reason": "8板连板，最高板标的，市场情绪风向标",
+          "price": 11.73,
+          "pct": 10.04,
+          "amount": 413873840,
+          "industry": "教育",
+          "pattern": "烂板",
+          "boards": 8
+        },
+        {
+          "code": "002703",
+          "name": "浙江世宝",
+          "dimension": "首板强势",
+          "reason": "一字板，成交额1.8亿，新晋强势封板",
+          "price": 16.28,
+          "pct": 10.0,
+          "amount": 184382559,
+          "industry": "汽车零部",
+          "pattern": "一字板",
+          "boards": 1
+        }
+      ],
+      "bears": [
+        {
+          "code": "002734",
+          "name": "利民股份",
+          "dimension": "炸板王",
+          "reason": "炸板7次后封住，多头反复溃败，抛压极重",
+          "price": 15.16,
+          "pct": 10.01,
+          "amount": 433772480,
+          "industry": "农化制品",
+          "pattern": "烂板",
+          "boards": 1
+        },
+        {
+          "code": "600530",
+          "name": "ST交昂",
+          "dimension": "弱股持续弱",
+          "reason": "5日跌-19.0%，今日续跌-10.0%，弱股持续弱",
+          "price": 0,
+          "pct": -10.02,
+          "amount": 0,
+          "industry": "",
+          "pattern": "",
+          "boards": 0
+        },
+        {
+          "code": "301677",
+          "name": "C欣兴",
+          "dimension": "极端弱势",
+          "reason": "5日跌-21.8%，今日-2.1%",
+          "price": 0,
+          "pct": -2.06,
+          "amount": 0,
+          "industry": "",
+          "pattern": "",
+          "boards": 0
+        }
+      ]
+    },
+    {
+      "date": "2026-08-02",
+      "bulls": [
+        {
+          "code": "603221",
+          "name": "爱丽家居",
+          "dimension": "连板龙头",
+          "reason": "9板连板，最高板标的，市场情绪风向标",
+          "price": 22.54,
+          "pct": 10.0,
+          "amount": 450589344,
+          "industry": "家居用品",
+          "pattern": "秒板",
+          "boards": 9
+        },
+        {
+          "code": "000967",
+          "name": "盈峰环境",
+          "dimension": "首板强势",
+          "reason": "秒板，成交额3.4亿，新晋强势封板",
+          "price": 7.85,
+          "pct": 9.94,
+          "amount": 344648352,
+          "industry": "环保设备",
+          "pattern": "秒板",
+          "boards": 1
+        }
+      ],
+      "bears": [
+        {
+          "code": "002774",
+          "name": "快意电梯",
+          "dimension": "炸板王",
+          "reason": "炸板36次后封住，多头反复溃败，抛压极重",
+          "price": 14.82,
+          "pct": 10.02,
+          "amount": 309131296,
+          "industry": "专用设备",
+          "pattern": "烂板",
+          "boards": 1
+        }
+      ]
+    },
     {
       "date": "2026-07-28",
       "bulls": [

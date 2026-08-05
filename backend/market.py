@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import json
+import os
 import time
 from collections import Counter
 from datetime import datetime, timezone, timedelta
@@ -18,6 +20,60 @@ BEIJING = timezone(timedelta(hours=8))
 _CACHE: dict = {}
 _TTL = 300  # 5 分钟；全站共享，省数据源压力
 _REASON_CACHE: dict = {}  # 涨停原因缓存：{code: (date, reason)}，每日只抓一次
+
+# 每日历史缓存目录（收盘后的数据落盘，供非交易时段回看）
+_HIST_DIR = os.path.join(os.path.dirname(__file__), "data", "market_history")
+os.makedirs(_HIST_DIR, exist_ok=True)
+
+
+def _save_daily_cache(key: str, date_str: str, data: dict):
+    """保存某日的数据快照到历史缓存。"""
+    try:
+        path = os.path.join(_HIST_DIR, f"{key}_{date_str}.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+
+def _load_daily_cache(key: str, date_str: str) -> dict | None:
+    """从历史缓存读取某日的数据快照。"""
+    try:
+        path = os.path.join(_HIST_DIR, f"{key}_{date_str}.json")
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return None
+
+
+def _is_trading_hours() -> bool:
+    """判断当前是否处于 A 股交易时段（9:30-11:30, 13:00-15:00）。"""
+    now = datetime.now(BEIJING)
+    if now.weekday() >= 5:  # 周末
+        return False
+    hhmm = now.hour * 60 + now.minute
+    # 9:30-11:30 或 13:00-15:00
+    return (9 * 60 + 30 <= hhmm <= 11 * 60 + 30) or (13 * 60 <= hhmm <= 15 * 60)
+
+
+def _before_9am() -> bool:
+    """判断当前是否在交易日 9:00 之前。"""
+    now = datetime.now(BEIJING)
+    if now.weekday() >= 5:  # 周末
+        return True
+    return now.hour < 9
+
+
+def _previous_trading_day() -> str:
+    """获取上一个交易日（往前找第一个工作日）。"""
+    now = datetime.now(BEIJING)
+    for i in range(1, 10):
+        d = now - timedelta(days=i)
+        if d.weekday() < 5:
+            return d.strftime("%Y-%m-%d")
+    return (now - timedelta(days=1)).strftime("%Y-%m-%d")
 
 
 def _cached(key: str, fn, valid=bool):
@@ -276,15 +332,200 @@ def get_short_term_emotion() -> dict:
 
 
 def get_turnover_top() -> dict:
-    """全市场成交额榜 Top20（客观公开榜单，含缓存 5 分钟）。"""
+    """全市场成交额榜 Top20（客观公开榜单，含缓存 5 分钟）。
+
+    非交易时段 / 交易日 9:00 前：默认显示上一交易日的收盘数据，
+    并标注 is_historical=True + historical_date，提醒读者这是昨日数据。
+    交易时段正常获取实时数据，同时落盘保存供日后回看。
+    """
+    # 非交易时段或 9 点前：优先返回上一交易日的历史缓存
+    if _before_9am() or not _is_trading_hours():
+        prev_date = _previous_trading_day()
+        cached = _load_daily_cache("turnover_top", prev_date)
+        if cached and cached.get("stocks"):
+            return {
+                **cached,
+                "is_historical": True,
+                "historical_date": prev_date,
+                "historical_note": f"非交易时段 · 显示 {prev_date} 收盘数据",
+            }
+
     def build():
-        return {
-            "stocks": astock.market_turnover_rank(20),
+        stocks = astock.market_turnover_rank(20)
+        today = datetime.now(BEIJING).strftime("%Y-%m-%d")
+        result = {
+            "stocks": stocks,
             "updated": datetime.now(BEIJING).strftime("%Y-%m-%d %H:%M"),
+            "is_historical": False,
         }
-    return _cached("turnover_top", build, valid=lambda v: bool(v.get("stocks")))
+        # 收盘后保存当日快照到历史缓存（每天只存一次足够）
+        if _is_a_share_closed():
+            _save_daily_cache("turnover_top", today, result)
+        return result
+
+    result = _cached("turnover_top", build, valid=lambda v: bool(v.get("stocks")))
+
+    # 如果实时获取失败，兜底用上一交易日缓存
+    if not result.get("stocks"):
+        prev_date = _previous_trading_day()
+        cached = _load_daily_cache("turnover_top", prev_date)
+        if cached and cached.get("stocks"):
+            return {
+                **cached,
+                "is_historical": True,
+                "historical_date": prev_date,
+                "historical_note": f"实时数据获取失败 · 显示 {prev_date} 收盘数据",
+            }
+
+    return result
 
 
 def get_global_indices() -> list[dict]:
     """全球指数快照（美股 / 港股，含缓存 5 分钟）。空结果不缓存。"""
     return _cached("global_indices", gstock.global_indices, valid=bool)
+
+
+# ---------- 交易时段判断 + 今日实时打板情绪 ----------
+
+def _is_weekend(d) -> bool:
+    return d.weekday() >= 5
+
+
+def _is_a_share_closed() -> bool:
+    """A 股是否已收盘（上海时间 15:05 后）。"""
+    n = datetime.now(BEIJING)
+    return (n.hour, n.minute) >= (15, 5)
+
+
+def _quote_trade_day() -> str | None:
+    """通过腾讯实时行情时间戳判断当前行情属于哪个交易日。"""
+    import urllib.request
+    try:
+        raw = urllib.request.urlopen("http://qt.gtimg.cn/q=sh600000", timeout=8).read().decode("gbk", "ignore")
+        f = raw.split("~")
+        ts = f[30].strip() if len(f) > 30 else ""
+        if len(ts) >= 8 and ts[:8].isdigit():
+            return f"{ts[:4]}-{ts[4:6]}-{ts[6:8]}"
+    except Exception:
+        pass
+    return None
+
+
+_LIVE_CACHE: dict = {}
+_LIVE_TTL = 15.0      # 今日池子 15 秒
+_PREV_TTL = 3600.0    # 昨日池子盘中不变
+
+
+def _live_cached(key: str, ttl: float, fn):
+    now = time.time()
+    hit = _LIVE_CACHE.get(key)
+    if hit and now - hit[0] < ttl:
+        return hit[1]
+    val = fn()
+    if val is not None:
+        _LIVE_CACHE[key] = (now, val)
+    return val
+
+
+def get_market_session() -> dict:
+    """此刻实时行情属于哪一场（盘前/盘中/已收盘/非交易日）。"""
+    today = datetime.now(BEIJING).strftime("%Y-%m-%d")
+    quotes_of = _quote_trade_day()
+    is_today = bool(quotes_of) and quotes_of == today
+    closed = _is_a_share_closed()
+    now = datetime.now(BEIJING)
+    hhmm = now.hour * 60 + now.minute
+
+    if not quotes_of:
+        phase, label = "未知", "行情时间取不到"
+    elif is_today and not closed and hhmm < 9 * 60 + 25:
+        phase, label = "集合竞价", "集合竞价 · 尚未成交"
+    elif is_today and not closed:
+        phase, label = "盘中", "盘中 · 实时"
+    elif is_today:
+        phase, label = "已收盘", f"{today} 收盘"
+    elif _is_weekend(now.date()):
+        phase, label = "非交易日", f"非交易日 · 显示 {quotes_of} 收盘"
+    elif not closed:
+        phase, label = "盘前", f"盘前 · 显示 {quotes_of} 收盘"
+    else:
+        phase, label = "已收盘", f"已收盘 · 显示 {quotes_of} 收盘"
+
+    return {
+        "now": now.strftime("%Y-%m-%d %H:%M"),
+        "today": today,
+        "quotes_of": quotes_of,
+        "is_today": is_today,
+        "phase": phase,
+        "label": label,
+    }
+
+
+def _live_pool(kind: str, ymd: str) -> list[dict] | None:
+    """取东财涨停板池子（不加锁的实时出口）。"""
+    try:
+        return astock.em_zt_topic_pool(kind, ymd, "fbt:asc") or []
+    except Exception:
+        return None
+
+
+def _prev_trade_date(today_str: str) -> str | None:
+    """简易前一交易日：往前找第一个工作日。"""
+    from datetime import timedelta
+    d = datetime.strptime(today_str, "%Y-%m-%d")
+    for i in range(1, 10):
+        pd = d - timedelta(days=i)
+        if pd.weekday() < 5:
+            return pd.strftime("%Y-%m-%d")
+    return None
+
+
+def get_live_emotion() -> dict:
+    """今日实时打板情绪（盘中随盘变化）。非交易时段/取不到 → available=False。"""
+    today = datetime.now(BEIJING).strftime("%Y-%m-%d")
+    ymd = today.replace("-", "")
+
+    zt = _live_cached(f"live_zt:{ymd}", _LIVE_TTL, lambda: _live_pool("getTopicZTPool", ymd))
+    if zt is None:
+        return {"available": False, "reason": "涨停池取数失败"}
+    if not zt:
+        return {"available": False, "date": today, "reason": "今日还没有涨停池（未开盘 / 非交易日）"}
+
+    zb = _live_cached(f"live_zb:{ymd}", _LIVE_TTL, lambda: _live_pool("getTopicZBPool", ymd))
+    dt = _live_cached(f"live_dt:{ymd}", _LIVE_TTL, lambda: _live_pool("getTopicDTPool", ymd))
+
+    boards = [_num(p.get("lbc")) or 1 for p in zt]
+    zt_n = len(zt)
+    zb_n = len(zb) if zb is not None else None
+    tried = zt_n + zb_n if zb_n is not None else None
+
+    # 晋级率：昨日涨停的票今天又封住
+    prev_day = _prev_trade_date(today)
+    prev = None
+    if prev_day:
+        prev = _live_cached(f"live_zt:{prev_day.replace('-','')}", _PREV_TTL,
+                            lambda: _live_pool("getTopicZTPool", prev_day.replace("-", "")))
+    today_codes = {str(p.get("c")) for p in zt}
+    promo = None
+    promo_base = None
+    if prev:
+        promo_base = len(prev)
+        promo = round(sum(1 for p in prev if str(p.get("c")) in today_codes) / promo_base, 4) if promo_base else None
+
+    settled = _is_a_share_closed()
+    return {
+        "available": True,
+        "date": today,
+        "as_of": datetime.now(BEIJING).strftime("%H:%M"),
+        "phase": "盘中" if not settled else "已收盘",
+        "zt_count": zt_n,
+        "dt_count": len(dt) if dt is not None else None,
+        "zb_count": zb_n,
+        "max_boards": max(boards) if boards else 0,
+        "lianban_count": sum(1 for b in boards if b >= 2),
+        "seal_rate": round(zt_n / tried, 4) if tried else None,
+        "break_rate": round(zb_n / tried, 4) if (tried and zb_n is not None) else None,
+        "promotion_rate": promo,
+        "promotion_base": promo_base,
+        "promotion_base_date": prev_day,
+    }
